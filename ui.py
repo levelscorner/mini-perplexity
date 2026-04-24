@@ -13,7 +13,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from rich.console import Console
 from rich.json import JSON as RichJSON
@@ -98,16 +98,30 @@ class ReasoningChainUI:
         "system": ("dim", "dim", "System"),
     }
 
-    def __init__(self, log_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        log_path: Path | None = None,
+        on_event: Callable[[dict], None] | None = None,
+        render_terminal: bool = True,
+    ) -> None:
         """Create a UI.
 
         Args:
             log_path: Where to write the JSON transcript at the end of the
                       run. If None, events are still captured in memory
                       but nothing is persisted — useful for tests.
+            on_event: Optional callback fired on every emit with the event's
+                      dict form. Used by the webapp to stream events over SSE
+                      while the CLI still renders to the terminal.
+            render_terminal: When False, skip the rich Panel rendering (but
+                      keep capturing events + firing the callback). Useful
+                      when the agent is driven from a web server and we
+                      don't want stdout noise in the server logs.
         """
         self.console = Console()                 # rich Console handles ANSI / width detection.
         self.log_path = log_path
+        self.on_event = on_event
+        self.render_terminal = render_terminal
         self.events: list[ChainEvent] = []       # Accumulates every emit.
 
     # ----- public emitters ----------------------------------------------------
@@ -207,7 +221,15 @@ class ReasoningChainUI:
     # the emit methods above.
 
     def _emit(self, kind: str, iteration: int, payload: Any) -> None:
-        """Create a ChainEvent, append it, render it. The unified pipeline."""
+        """Create a ChainEvent, append it, render it, fan out to subscribers.
+
+        Fan-out order:
+            1. Append to the in-memory event list (for save()).
+            2. Render to the terminal (unless render_terminal was False).
+            3. Fire the on_event callback (used by the webapp's SSE stream).
+
+        Rendering first means a slow subscriber never blocks the terminal UI.
+        """
         event = ChainEvent(
             kind=kind,
             iteration=iteration,
@@ -215,7 +237,19 @@ class ReasoningChainUI:
             ts=datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         )
         self.events.append(event)
-        self._render(event)
+
+        if self.render_terminal:
+            self._render(event)
+
+        if self.on_event is not None:
+            # Swallow subscriber exceptions — the agent must not fail because
+            # a UI listener did. Log via stderr so issues are still visible
+            # in server logs but don't corrupt agent state.
+            try:
+                self.on_event(event.to_dict())
+            except Exception as exc:  # noqa: BLE001 — broad by design
+                import sys
+                print(f"[ui] on_event callback raised: {exc!r}", file=sys.stderr)
 
     def _render(self, event: ChainEvent) -> None:
         """Draw a single event as a rich Panel in the terminal."""

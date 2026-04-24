@@ -16,6 +16,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from dotenv import load_dotenv
 
@@ -84,7 +85,12 @@ def _render_conversation(system: str, messages: list[dict]) -> str:
     return "\n".join(parts)
 
 
-def run_agent(user_query: str, max_iterations: int = 8) -> int:
+def run_agent(
+    user_query: str,
+    max_iterations: int = 8,
+    on_event: Callable[[dict], None] | None = None,
+    render_terminal: bool = True,
+) -> int:
     """Execute the agent loop against one user query.
 
     This is the whole agent. The shape:
@@ -101,8 +107,13 @@ def run_agent(user_query: str, max_iterations: int = 8) -> int:
         4. Persist the reasoning chain to logs/*.json.
 
     Args:
-        user_query:     The question to research.
-        max_iterations: Safety cap; prevents runaway LLMs from burning quota.
+        user_query:      The question to research.
+        max_iterations:  Safety cap; prevents runaway LLMs from burning quota.
+        on_event:        Optional callback invoked for every ChainEvent dict
+                         as it's emitted. Used by the webapp to stream the
+                         reasoning chain over SSE in real time.
+        render_terminal: When False, skip rich Panel rendering. The webapp
+                         passes False so its agent runs don't spam stdout.
 
     Returns:
         Process exit code:
@@ -117,7 +128,11 @@ def run_agent(user_query: str, max_iterations: int = 8) -> int:
     # Timestamp becomes part of the log filename — sortable, collision-free.
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = LOGS_DIR / f"run-{stamp}.json"
-    ui = ReasoningChainUI(log_path=log_path)
+    ui = ReasoningChainUI(
+        log_path=log_path,
+        on_event=on_event,
+        render_terminal=render_terminal,
+    )
 
     # Print the header rule + record the user query as the first event.
     ui.banner(user_query)

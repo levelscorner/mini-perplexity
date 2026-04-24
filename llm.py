@@ -106,9 +106,22 @@ class LLMClient:
         # One-shot generation. For streaming or chat, the SDK offers
         # .generate_content_stream() and .chats API — not used here
         # because the agent loop re-sends the full history every turn.
+        #
+        # stop_sequences: critical for our flatten-conversation prompt format.
+        # Without these, the model pattern-matches past its own JSON and
+        # starts hallucinating "Tool Result:" / "User:" sections (the
+        # prompt trains it on those labels). Each of these strings makes
+        # Gemini stop generation the instant it's about to emit them.
         response = self._client.models.generate_content(
             model=self.model,
             contents=prompt,
+            config={
+                "stop_sequences": [
+                    "\nTool Result:",
+                    "\nUser:",
+                    "\nSystem:",
+                ],
+            },
         )
         # `response.text` can be None if the model refused to answer.
         # The `or ""` ensures callers always get a string, not a Nonetype

@@ -82,17 +82,43 @@ def parse_llm_response(text: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        # Fall through to the regex fallback below. `pass` here is a very
+        # Fall through to the raw-decode fallback below. `pass` here is a
         # common Python idiom for "catch this specific exception and keep
         # going" — it's not ignoring errors, it's acknowledging them.
         pass
 
-    # ── Strategy 3: Regex fallback ───────────────────────────────────────
+    # ── Strategy 3: raw_decode — extract first valid JSON object ─────────
     #
-    # If the model wrapped JSON in prose ("Here is the JSON: { ... } Hope
-    # this helps!"), we can still rescue it by grabbing the first {...} span.
-    # The `re.DOTALL` flag makes "." match newlines too, which we need
-    # because JSON objects commonly span multiple lines.
+    # The hardest real-world failure mode: the model emits valid JSON, then
+    # CONTINUES with trailing prose or a hallucinated next turn. For example:
+    #
+    #     {"tool_name": "fetch_page", "tool_arguments": {...}}
+    #
+    #     Tool Result: {"url": "...", "title": "...", ...}
+    #
+    # A greedy regex like `\{.*\}` with DOTALL would match from the first
+    # `{` to the LAST `}`, producing malformed JSON. Instead, we use
+    # json.JSONDecoder().raw_decode(), which parses the FIRST valid JSON
+    # value starting at position 0 and returns where it ended — letting us
+    # ignore anything after.
+    #
+    # Step one: skip any leading non-JSON prose to find the first `{`.
+    idx = text.find("{")
+    if idx >= 0:
+        try:
+            # raw_decode returns (parsed_object, end_index). We only need
+            # the parsed object. Trailing text is silently ignored.
+            obj, _end = json.JSONDecoder().raw_decode(text[idx:])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+
+    # ── Strategy 4: Greedy regex fallback (last resort) ──────────────────
+    #
+    # Very rare at this point, but kept for historical parity with the
+    # course reference parser. If the first-object strategy missed (e.g.,
+    # the text has a stray `{` before the real JSON), this can still win.
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if match:
         try:
