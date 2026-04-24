@@ -1,0 +1,353 @@
+/* Mini Perplexity — webapp styles
+   Small design system that mirrors the rich-CLI palette so the web
+   demo "feels" continuous with the terminal demo. Light theme by
+   intent — most graders watch on bright screens / projectors. */
+
+:root {
+  --bg:        #f7f7f8;
+  --surface:   #ffffff;
+  --border:    #e5e5e7;
+  --text:      #1d1d1f;
+  --muted:     #6b7280;
+  --accent:    #0066ff;
+
+  /* CLI-mirror palette — used for reasoning-chain event chips */
+  --c-user:        #0891b2;  /* cyan */
+  --c-llm:         #a855f7;  /* magenta */
+  --c-tool-call:   #d97706;  /* yellow */
+  --c-tool-result: #16a34a;  /* green */
+  --c-final:       #15803d;  /* bright green */
+  --c-error:       #dc2626;  /* red */
+  --c-system:      #6b7280;  /* dim */
+
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 1px rgba(0,0,0,0.02);
+  --mono: 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  height: 100vh;
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────── */
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.brand .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+}
+
+.brand .tag {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.controls .toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.controls input[type=checkbox] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+/* ── Main layout ─────────────────────────────────────────────────── */
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  overflow: hidden;
+  transition: grid-template-columns 200ms ease;
+}
+
+.layout:has(.reasoning:not(.hidden)) {
+  grid-template-columns: 1fr 460px;
+}
+
+/* ── Chat column ─────────────────────────────────────────────────── */
+
+.chat {
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.bubble {
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.bubble.user {
+  align-self: flex-end;
+  max-width: 80%;
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.bubble.assistant {
+  align-self: flex-start;
+  max-width: 95%;
+}
+
+.bubble.assistant .body {
+  margin: 0;
+}
+
+.bubble.assistant .sources {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.bubble.assistant .sources ol {
+  margin: 6px 0 0;
+  padding-left: 22px;
+}
+
+.bubble.assistant .sources a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.bubble.assistant .sources a:hover {
+  text-decoration: underline;
+}
+
+.bubble.thinking {
+  align-self: flex-start;
+  font-style: italic;
+  color: var(--muted);
+  border-style: dashed;
+}
+
+.bubble.thinking::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50%      { opacity: 1; transform: scale(1.2); }
+}
+
+/* ── Reasoning panel ─────────────────────────────────────────────── */
+
+.reasoning {
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.reasoning.hidden {
+  display: none;
+}
+
+.reasoning-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.reasoning-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-family: var(--sans);
+}
+
+.reasoning-head button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.reasoning-head button:hover { color: var(--text); }
+
+.reasoning-body {
+  overflow-y: auto;
+  padding: 12px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.event {
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--surface);
+}
+
+.event-label {
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+  font-family: var(--sans);
+}
+
+.event-iter {
+  margin-left: 6px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.event pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--text);
+}
+
+.event.user        { border-left-color: var(--c-user); }
+.event.user        .event-label { color: var(--c-user); }
+.event.llm         { border-left-color: var(--c-llm); }
+.event.llm         .event-label { color: var(--c-llm); }
+.event.tool_call   { border-left-color: var(--c-tool-call); }
+.event.tool_call   .event-label { color: var(--c-tool-call); }
+.event.tool_result { border-left-color: var(--c-tool-result); }
+.event.tool_result .event-label { color: var(--c-tool-result); }
+.event.final       { border-left-color: var(--c-final); }
+.event.final       .event-label { color: var(--c-final); }
+.event.error       { border-left-color: var(--c-error); }
+.event.error       .event-label { color: var(--c-error); }
+.event.system      { border-left-color: var(--c-system); }
+.event.system      .event-label { color: var(--c-system); }
+
+/* ── Composer ────────────────────────────────────────────────────── */
+
+.composer {
+  display: flex;
+  gap: 10px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.composer input {
+  flex: 1;
+  padding: 12px 14px;
+  font-size: 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-family: var(--sans);
+  color: var(--text);
+}
+.composer input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 102, 255, 0.15);
+}
+.composer input:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.composer button {
+  padding: 0 20px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.composer button:hover { filter: brightness(1.1); }
+.composer button:disabled {
+  background: var(--muted);
+  cursor: not-allowed;
+}
+
+/* ── Status bar ──────────────────────────────────────────────────── */
+
+.status {
+  padding: 6px 24px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}

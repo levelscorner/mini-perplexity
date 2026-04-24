@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mini Perplexity</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Mini Perplexity</h1>
+      <span class="tag">S03 Agentic Loop</span>
+    </div>
+    <div class="controls">
+      <label class="toggle">
+        <input type="checkbox" id="reasoning-toggle" />
+        <span>Show reasoning</span>
+      </label>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="chat" id="chat" aria-live="polite"></section>
+
+    <aside class="reasoning hidden" id="reasoning">
+      <div class="reasoning-head">
+        <h2>Reasoning chain</h2>
+        <button id="clear-reasoning" type="button">clear</button>
+      </div>
+      <div class="reasoning-body" id="reasoning-body"></div>
+    </aside>
+  </main>
+
+  <form class="composer" id="composer" autocomplete="off">
+    <input
+      id="question"
+      name="question"
+      type="text"
+      placeholder="Ask anything — e.g. 'How does MCP work and who uses it?'"
+      required
+    />
+    <button id="send" type="submit">Send</button>
+  </form>
+
+  <footer class="status" id="status">Idle.</footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
