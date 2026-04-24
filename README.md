@@ -33,33 +33,11 @@ uv pip install -e .
 # or: pip install -e .
 
 cp .env.example .env
+$EDITOR .env   # set GEMINI_API_KEY=... from https://aistudio.google.com/apikey
 ```
 
-### Pick a backend (or auto-detect)
-
-`LLM_PROVIDER=auto` (the default) tries **local Ollama first** and falls back to
-Gemini only if Ollama isn't running. Zero config needed if you have Ollama.
-
-**Local (preferred — free, offline):**
-
-```bash
-# One-time: install Ollama and pull a model.
-# https://ollama.com/download
-ollama pull gemma4:26b       # or any other local model you prefer
-ollama serve &               # run in background; auto-starts on login once set up
-```
-
-The agent auto-detects at `http://localhost:11434` and uses `gemma4:26b` by
-default. Override via `OLLAMA_MODEL` and `OLLAMA_HOST` in `.env`.
-
-**Cloud (fallback — when Ollama isn't available):**
-
-```bash
-$EDITOR .env
-# set GEMINI_API_KEY=... from https://aistudio.google.com/apikey
-```
-
-Default cloud model: `gemini-2.5-flash-lite`. Free tier: 15 RPM / 500 RPD.
+Free tier: 15 RPM / 500 RPD. Default model: `gemini-2.5-flash-lite`. Override
+via `GEMINI_MODEL` in `.env` if you need the pro tier.
 
 ---
 
