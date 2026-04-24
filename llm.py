@@ -179,11 +179,26 @@ class LLMClient:
         """Send one prompt to Ollama's /api/generate endpoint.
 
         Key Ollama options we use:
-            format: "json"    → forces the model to emit valid JSON. Huge
-                                win — our parse-retry branch is unlikely
-                                to ever fire on this backend.
-            temperature: 0.1  → near-deterministic; stability beats creativity
-                                for tool-calling.
+            format: "json"    → forces the model to emit valid JSON. Our
+                                parse-retry branch is unlikely to fire.
+            num_ctx: 16384    → CRITICAL. Ollama defaults to 2048 tokens
+                                for the full prompt+response window, which
+                                is far too small once the agent has fetched
+                                a couple of pages (conversation easily hits
+                                4k+ tokens by iter 5). A 2048 window causes
+                                the oldest history to be silently truncated
+                                AND the final save_answer JSON to be cut
+                                off mid-string. 16384 covers a multi-fetch
+                                agent run with room for a 1000+ token
+                                cited answer. Gemma4 supports up to 32k.
+            num_predict: 4096 → Explicit max output length. Prevents
+                                another class of truncation where a long
+                                save_answer body runs into the implicit
+                                completion cap.
+            temperature: 0.0  → fully greedy decoding. For tool-calling on
+                                a base-ish model like Gemma, any sampling
+                                risks corrupted keys (`tool_Anth_arguments`
+                                style drift seen in iter 1).
             stop: self._STOP  → same stop words as Gemini; defense in depth
                                 even though format:json already helps.
             stream: False     → single blocking response; simpler to read.
@@ -201,7 +216,9 @@ class LLMClient:
             # an entire demo + submission write-up.
             "keep_alive": os.getenv("OLLAMA_KEEP_ALIVE", "30m"),
             "options": {
-                "temperature": 0.1,
+                "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "16384")),
+                "num_predict": int(os.getenv("OLLAMA_NUM_PREDICT", "4096")),
+                "temperature": float(os.getenv("OLLAMA_TEMPERATURE", "0.0")),
                 "stop": self._STOP,
             },
         }
