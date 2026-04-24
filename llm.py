@@ -194,6 +194,12 @@ class LLMClient:
             "prompt": prompt,
             "format": "json",
             "stream": False,
+            # keep_alive tells Ollama how long to keep the model loaded in
+            # memory after this call. Default is 5 minutes, which unloads
+            # between user sessions and forces a slow cold-start reload on
+            # the next run. 30m keeps gemma4:26b (17 GB) resident through
+            # an entire demo + submission write-up.
+            "keep_alive": os.getenv("OLLAMA_KEEP_ALIVE", "30m"),
             "options": {
                 "temperature": 0.1,
                 "stop": self._STOP,
