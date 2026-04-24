@@ -218,7 +218,17 @@ class LLMClient:
             "options": {
                 "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "16384")),
                 "num_predict": int(os.getenv("OLLAMA_NUM_PREDICT", "4096")),
-                "temperature": float(os.getenv("OLLAMA_TEMPERATURE", "0.0")),
+                # Small non-zero temp instead of 0.0 — true-greedy decoding
+                # on Gemma-class models can fall into repetition loops
+                # ("an/an/an...") on long structured outputs. 0.2 gives
+                # just enough variance to escape without corrupting keys.
+                "temperature": float(os.getenv("OLLAMA_TEMPERATURE", "0.2")),
+                # repeat_penalty directly fights the "an/an/an" stutter:
+                # already-emitted tokens get a probability discount, so
+                # the decoder can't stay in a 2-3 token loop.
+                # 1.1 is the usual sweet spot; > 1.2 starts hurting JSON
+                # validity because key names repeat legitimately.
+                "repeat_penalty": float(os.getenv("OLLAMA_REPEAT_PENALTY", "1.1")),
                 "stop": self._STOP,
             },
         }
