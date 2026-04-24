@@ -34,7 +34,14 @@ from typing import Any
 
 import requests
 import trafilatura
-from duckduckgo_search import DDGS
+
+# The library rebranded from `duckduckgo-search` → `ddgs` in late 2025.
+# New installs should use `ddgs`; we fall back to the old name so anyone
+# on a prior checkout without running `pip install ddgs` still works.
+try:
+    from ddgs import DDGS
+except ImportError:  # pragma: no cover
+    from duckduckgo_search import DDGS
 
 
 HERE = Path(__file__).resolve().parent
