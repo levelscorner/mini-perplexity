@@ -127,3 +127,7 @@ mini-perplexity/
 ## Build walkthrough
 
 For a step-by-step explanation of how this agent was built — what each module does, why the loop is shaped this way, and the design decisions behind it — read [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md).
+
+## Roadmap — what to build next
+
+The curated learning path from this single-agent loop to a production-grade orchestration stack (MCP → memory → evals → planning → multi-agent → A2A) lives in [`docs/ROADMAP.md`](docs/ROADMAP.md). Grounded in 2026 industry consensus + the EAG V3 curriculum.
