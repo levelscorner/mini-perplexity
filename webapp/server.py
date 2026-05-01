@@ -1,41 +1,43 @@
-"""FastAPI server that exposes the Mini Perplexity agent over HTTP + SSE.
+"""FastAPI server that exposes Mini Perplexity over HTTP + SSE.
 
-Architecture:
+Routes:
+    GET  /                  Chat page (static index.html)
+    GET  /static/...        CSS/JS
+    GET  /healthz           Liveness probe
+    POST /api/run           Agent stream (SSE) — accepts {question, image_mode}
+    GET  /api/stats         Runtime stats (totals + per-tool)
+    GET  /api/recent-activity  Last 100 tool calls (newest first)
+    POST /api/tool/<name>   Proxy for higgsfield_auth_status / start_higgsfield_auth
+    GET  /api/cards/<slug>.png  Serve a saved render
+    GET  /dashboard         Prefab single-page dashboard
 
-    POST /api/run  {question: str}
-        Starts run_agent in a background thread. Responds with a
-        Server-Sent Events stream; one `data: {...}` line per ChainEvent
-        the UI emits (user / llm / tool_call / tool_result / final / error
-        / system). Closes the stream after `final` or after the agent ends.
+Bridging sync agent ↔ async server: run_agent is sync (blocking on LLM
++ network). We run it in a thread; the on_event callback pushes events
+into an asyncio.Queue via loop.call_soon_threadsafe. End-of-stream is
+signalled by a None sentinel.
 
-    GET /
-        Serves index.html.
-
-    GET /static/...
-        Serves CSS/JS.
-
-The agent itself is unmodified. We pass `on_event` (callback hook added
-to ReasoningChainUI) to receive every event and `render_terminal=False`
-so the agent doesn't spam the server's stdout.
-
-Bridging sync agent ↔ async server:
-    run_agent is sync (blocking on LLM + network). We run it in a thread
-    via Thread(target=...). The on_event callback is called from THAT
-    thread, so we use loop.call_soon_threadsafe() to push events into
-    the asyncio.Queue the SSE stream consumes from. End-of-stream is
-    signaled by pushing a sentinel (None).
+Stats + activity are recorded by wrapping every tool in TOOLS at import
+time. The wrapper times each call, records to stats.py, and pushes an
+event into the rolling _RECENT_ACTIVITY deque for the dashboard.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import sys
+import time
+from collections import deque
 from pathlib import Path
 from threading import Thread
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -46,13 +48,82 @@ REPO_ROOT = HERE.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import stats as stats_mod  # noqa: E402
 from mini_perplexity import run_agent  # noqa: E402
+from tools import TOOLS as _RAW_TOOLS  # noqa: E402
 
 STATIC_DIR = HERE / "static"
+CARDS_DIR = REPO_ROOT / "images"
+CARDS_DIR.mkdir(parents=True, exist_ok=True)
 
+
+# ---------------------------------------------------------------------------
+# Tool wrapping — record stats + activity for every tool call
+# ---------------------------------------------------------------------------
+_RECENT_ACTIVITY: deque[dict[str, Any]] = deque(maxlen=100)
+
+
+def _summarize_args(args: dict[str, Any], limit: int = 80) -> str:
+    """Compact one-line summary of tool input for the activity row."""
+    if not args:
+        return ""
+    parts: list[str] = []
+    for k, v in args.items():
+        s = json.dumps(v) if not isinstance(v, str) else v
+        if len(s) > 30:
+            s = s[:27] + "…"
+        parts.append(f"{k}={s}")
+    out = ", ".join(parts)
+    return (out[:limit - 1] + "…") if len(out) > limit else out
+
+
+def _record_activity(name: str, kwargs: dict[str, Any], duration_ms: float,
+                     ok: bool, error: str | None) -> None:
+    _RECENT_ACTIVITY.append({
+        "name": name,
+        "input": _summarize_args(kwargs),
+        "status": "ok" if ok else "fail",
+        "duration_ms": round(duration_ms, 1),
+        "ts": time.strftime("%H:%M:%S", time.localtime()),
+        "error": (error or "")[:200] if error else None,
+    })
+
+
+def _wrap_tool(name: str, fn):
+    def wrapped(*args, **kwargs):
+        start = time.monotonic()
+        ok, err = True, None
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:  # noqa: BLE001 — propagate; recorder still fires
+            ok = False
+            err = f"{type(e).__name__}: {e}"
+            raise
+        finally:
+            dt = (time.monotonic() - start) * 1000
+            try:
+                stats_mod.record_tool_call(name, dt, ok=ok, error=err)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                _record_activity(name, kwargs, dt, ok, err)
+            except Exception:  # noqa: BLE001
+                pass
+    return wrapped
+
+
+# Replace each entry in the agent's TOOLS dict with a wrapped version.
+# Mutates _RAW_TOOLS in place — that's the same dict the agent loop reads.
+for _name, _fn in list(_RAW_TOOLS.items()):
+    _RAW_TOOLS[_name] = _wrap_tool(_name, _fn)
+
+
+# ---------------------------------------------------------------------------
+# FastAPI app
+# ---------------------------------------------------------------------------
 app = FastAPI(
     title="Mini Perplexity",
-    description="Web UI for the S03 agentic research loop.",
+    description="Chat agent with image generation via Higgsfield.",
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -65,46 +136,86 @@ def index() -> FileResponse:
 
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
-    """Cheap liveness probe — used by tests, not by the UI."""
     return {"status": "ok"}
 
 
+# ---------------------------------------------------------------------------
+# /api/run — SSE chat
+# ---------------------------------------------------------------------------
 class RunRequest(BaseModel):
-    """Body of POST /api/run. Validated by Pydantic before the handler runs."""
-
     question: str
     max_iterations: int = 8
+    image_mode: bool = False
+
+
+_IMAGE_MODE_HINT = (
+    "\n\n[Mode hint: the user has enabled image mode. Call the "
+    "`render_image` tool with a refined, vivid prompt. Pick `panels=3` "
+    "or `panels=4` if a comic strip suits the request, else `panels=1`.]"
+)
+
+
+def _maybe_emit_image(event: dict[str, Any]) -> dict[str, Any] | None:
+    """If a tool_result is a render_image payload, return a synthetic image event."""
+    if event.get("kind") != "tool_result":
+        return None
+    payload = event.get("payload") or {}
+    if not isinstance(payload, dict) or payload.get("name") != "render_image":
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return None
+    t = result.get("type")
+    if t == "image":
+        return {
+            "kind": "image",
+            "iteration": event.get("iteration"),
+            "payload": {
+                "kind": "image",
+                "slug": result.get("slug"),
+                "url": result.get("url"),
+                "alt": result.get("alt", ""),
+            },
+            "ts": event.get("ts", ""),
+        }
+    if t == "comic_strip":
+        return {
+            "kind": "image",
+            "iteration": event.get("iteration"),
+            "payload": {
+                "kind": "comic_strip",
+                "panels": result.get("panels", []),
+            },
+            "ts": event.get("ts", ""),
+        }
+    return None
 
 
 @app.post("/api/run")
 async def run(body: RunRequest) -> StreamingResponse:
-    """Run the agent on a question, stream events as they happen.
-
-    Returns a text/event-stream where each event is a one-line JSON
-    payload prefixed with `data: ` (the SSE format). The browser
-    consumes this with fetch() + ReadableStream rather than EventSource
-    because EventSource is GET-only and we need a request body here.
-    """
-    # asyncio.Queue is the bridge between the sync agent thread (producer)
-    # and the async SSE generator (consumer). It's safe to put_nowait
-    # from the agent thread via loop.call_soon_threadsafe.
+    """Run the agent on a question, stream events as they happen."""
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
 
+    question = body.question
+    if body.image_mode:
+        question = body.question + _IMAGE_MODE_HINT
+
     def on_event(event_dict: dict[str, Any]) -> None:
-        """Called by ReasoningChainUI on every emit; pushes to the queue."""
         loop.call_soon_threadsafe(queue.put_nowait, event_dict)
+        synthetic = _maybe_emit_image(event_dict)
+        if synthetic is not None:
+            loop.call_soon_threadsafe(queue.put_nowait, synthetic)
 
     def agent_thread() -> None:
-        """Run the agent, then push the sentinel so the stream closes."""
         try:
             run_agent(
-                body.question,
+                question,
                 max_iterations=body.max_iterations,
                 on_event=on_event,
                 render_terminal=False,
             )
-        except Exception as exc:  # noqa: BLE001 — surface anything to the UI
+        except Exception as exc:  # noqa: BLE001
             loop.call_soon_threadsafe(
                 queue.put_nowait,
                 {
@@ -115,22 +226,16 @@ async def run(body: RunRequest) -> StreamingResponse:
                 },
             )
         finally:
-            loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
+            loop.call_soon_threadsafe(queue.put_nowait, None)
 
     Thread(target=agent_thread, daemon=True).start()
 
     async def stream():
-        """Drain the queue, yield SSE lines until sentinel or final event."""
         while True:
             event = await queue.get()
             if event is None:
                 break
-            # SSE wire format: `data: <json>\n\n`. The blank line terminates
-            # the event. ensure_ascii=False keeps unicode intact for unicode
-            # questions / answers.
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            # Closing on `final` is a UX nicety — without it the stream
-            # stays open until the agent thread also pushes the sentinel.
             if event.get("kind") == "final":
                 break
 
@@ -139,15 +244,59 @@ async def run(body: RunRequest) -> StreamingResponse:
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # disables proxy buffering if any
+            "X-Accel-Buffering": "no",
         },
     )
 
 
-def main() -> None:
-    """Entry point used by `mini-perplexity-web` script."""
-    import uvicorn
+# ---------------------------------------------------------------------------
+# Dashboard endpoints
+# ---------------------------------------------------------------------------
+@app.get("/api/stats")
+def api_stats() -> JSONResponse:
+    payload = stats_mod.get_stats()
+    payload["tools_array"] = [
+        {"name": k, **v} for k, v in payload.get("tools", {}).items()
+    ]
+    return JSONResponse(payload)
 
+
+@app.get("/api/recent-activity")
+def api_recent_activity() -> JSONResponse:
+    return JSONResponse({"events": list(reversed(_RECENT_ACTIVITY))})
+
+
+@app.get("/api/cards/{slug}.png")
+def api_card_image(slug: str):
+    path = CARDS_DIR / f"{slug}.png"
+    if not path.exists():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return FileResponse(path, media_type="image/png")
+
+
+@app.post("/api/tool/{name}")
+def api_tool(name: str) -> JSONResponse:
+    """Proxy for the Auth tab on the dashboard. Limited surface."""
+    if name == "higgsfield_auth_status":
+        import higgsfield
+        return JSONResponse(higgsfield.auth_status())
+    if name == "start_higgsfield_auth":
+        import higgsfield
+        return JSONResponse(higgsfield.bootstrap_oauth())
+    return JSONResponse({"error": "unknown tool"}, status_code=404)
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard() -> HTMLResponse:
+    from webapp.dashboard import build_dashboard
+    return HTMLResponse(build_dashboard().html())
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+def main() -> None:
+    import uvicorn
     uvicorn.run(
         "webapp.server:app",
         host="127.0.0.1",
