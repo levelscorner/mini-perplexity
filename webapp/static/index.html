@@ -5,19 +5,29 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Mini Perplexity</title>
   <link rel="stylesheet" href="/static/styles.css" />
+  <script>
+    // Pre-paint theme so we don't flash light → dark on first render.
+    (function () {
+      var saved = localStorage.getItem('theme');
+      var sys = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', saved || (sys ? 'dark' : 'light'));
+    })();
+  </script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
       <span class="dot"></span>
       <h1>Mini Perplexity</h1>
-      <span class="tag">S03 Agentic Loop</span>
+      <span class="tag">+ image gen</span>
     </div>
     <div class="controls">
+      <a class="dash-link" href="/dashboard" target="_blank" rel="noopener">Dashboard ↗</a>
       <label class="toggle">
         <input type="checkbox" id="reasoning-toggle" />
         <span>Show reasoning</span>
       </label>
+      <button id="theme-toggle" type="button" class="icon-btn" aria-label="Toggle theme" title="Toggle light / dark">🌓</button>
     </div>
   </header>
 
@@ -34,11 +44,14 @@
   </main>
 
   <form class="composer" id="composer" autocomplete="off">
+    <button type="button" id="image-toggle" class="icon-btn"
+            aria-pressed="false"
+            title="Generate an image (one-shot)">🖼</button>
     <input
       id="question"
       name="question"
       type="text"
-      placeholder="Ask anything — e.g. 'How does MCP work and who uses it?'"
+      placeholder="Ask anything — or type /image to render an image"
       required
     />
     <button id="send" type="submit">Send</button>

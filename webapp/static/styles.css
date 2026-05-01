@@ -351,3 +351,179 @@ body {
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
+
+/* ── Dark theme tokens ──────────────────────────────────────────── */
+
+[data-theme="dark"] {
+  --bg:        #0c0c0e;
+  --surface:   #161618;
+  --border:    #2a2a2e;
+  --text:      #f3f4f6;
+  --muted:     #9ca3af;
+  --accent:    #4d8bff;
+  --shadow:    0 1px 2px rgba(0,0,0,0.4), 0 1px 1px rgba(0,0,0,0.2);
+
+  --c-user:        #22d3ee;
+  --c-llm:         #c084fc;
+  --c-tool-call:   #f59e0b;
+  --c-tool-result: #34d399;
+  --c-final:       #4ade80;
+  --c-error:       #f87171;
+  --c-system:      #9ca3af;
+}
+
+/* ── Topbar additions: dashboard link + theme button ────────────── */
+
+.dash-link {
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: none;
+  margin-right: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.dash-link:hover {
+  color: var(--accent);
+  background: var(--bg);
+}
+
+.icon-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 9px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.icon-btn:hover {
+  border-color: var(--accent);
+}
+.icon-btn[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── Status pill — under user message bubbles ───────────────────── */
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-family: var(--mono);
+  margin: 4px 0 8px;
+  align-self: flex-start;
+  max-width: 90%;
+}
+.status-pill .pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c-tool-call);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.status-pill.collapsed .pill-dot {
+  background: var(--c-tool-result);
+  animation: none;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* ── Image card — agent-rendered single image ──────────────────── */
+
+.image-card {
+  align-self: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+  margin: 8px 0;
+  max-width: 720px;
+  box-shadow: var(--shadow);
+}
+.image-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--bg);
+}
+.image-card .caption {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+}
+.image-card .caption .slug {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.image-card .caption a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.image-card .caption a:hover { text-decoration: underline; }
+
+/* ── Comic strip — auto layout by panel count ───────────────────── */
+
+.comic-strip {
+  align-self: stretch;
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  max-width: 720px;
+}
+.comic-strip[data-panels="3"] { grid-template-columns: repeat(3, 1fr); }
+.comic-strip[data-panels="4"] { grid-template-columns: repeat(2, 1fr); }
+.comic-strip .panel {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface);
+  position: relative;
+  aspect-ratio: 1;
+}
+.comic-strip .panel img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.comic-strip .panel.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  color: var(--c-error);
+  font-size: 11px;
+  text-align: center;
+  font-family: var(--mono);
+}
+
+/* ── Sticky composer (already mostly OK; reinforce here) ────────── */
+
+.composer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+}
