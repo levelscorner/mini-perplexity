@@ -274,16 +274,41 @@ def api_card_image(slug: str):
     return FileResponse(path, media_type="image/png")
 
 
+_AUTH_PROXIES = {
+    # name → callable, looked up by import-time-deferred lambda so we
+    # don't pay the higgsfield import cost on module load.
+    "higgsfield_auth_status": lambda: __import__("higgsfield").auth_status(),
+    "start_higgsfield_auth":  lambda: __import__("higgsfield").bootstrap_oauth(),
+}
+
+
 @app.post("/api/tool/{name}")
 def api_tool(name: str) -> JSONResponse:
-    """Proxy for the Auth tab on the dashboard. Limited surface."""
-    if name == "higgsfield_auth_status":
-        import higgsfield
-        return JSONResponse(higgsfield.auth_status())
-    if name == "start_higgsfield_auth":
-        import higgsfield
-        return JSONResponse(higgsfield.bootstrap_oauth())
-    return JSONResponse({"error": "unknown tool"}, status_code=404)
+    """Proxy for the dashboard Auth tab. Records stats + activity like
+    every other tool call so the dashboard sees them in the breakdown."""
+    fn = _AUTH_PROXIES.get(name)
+    if fn is None:
+        return JSONResponse({"error": "unknown tool"}, status_code=404)
+
+    start = time.monotonic()
+    ok, err, payload = True, None, None
+    try:
+        payload = fn()
+        return JSONResponse(payload)
+    except Exception as e:  # noqa: BLE001
+        ok = False
+        err = f"{type(e).__name__}: {e}"
+        return JSONResponse({"error": err}, status_code=500)
+    finally:
+        dt = (time.monotonic() - start) * 1000
+        try:
+            stats_mod.record_tool_call(name, dt, ok=ok, error=err)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            _record_activity(name, {}, dt, ok, err)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
