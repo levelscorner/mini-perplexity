@@ -1,124 +1,118 @@
-"""Gemini client wrapper with free-tier throttling.
+"""Pluggable LLM client. Anthropic preferred, Gemini fallback.
 
-Matches the course reference convention (reference/08_llm_basic.py):
-    - Uses the new `google-genai` SDK (`from google import genai`).
-    - Sleeps before each call to respect 15 RPM / 500 RPD free-tier limits.
-    - Reads GEMINI_API_KEY, GEMINI_MODEL, THROTTLE_SECONDS from env.
+The agent loop only ever calls LLMClient(...).generate(prompt). Swap
+backends by setting LLM_BACKEND=anthropic|gemini, or just provide the
+matching API key and the right backend is auto-selected.
 
-Why a wrapper class exists at all:
-    The agent loop never imports Gemini directly. It only ever talks to
-    LLMClient. That means swapping to Claude, OpenAI, or a local model
-    is a single-file change — rewrite `generate()` to hit the new
-    backend, leave the loop and every other module untouched.
+Env:
+    LLM_BACKEND       — explicit override ("anthropic" | "gemini")
+    ANTHROPIC_API_KEY — required for anthropic
+    ANTHROPIC_MODEL   — defaults to claude-sonnet-4-6
+    GEMINI_API_KEY    — required for gemini
+    GEMINI_MODEL      — defaults to gemini-2.5-flash-lite
+    THROTTLE_SECONDS  — gemini-only throttle (default 4)
 """
 from __future__ import annotations
 
 import os
 import time
+from typing import Protocol
 
-from google import genai
+# Stop sequences inherited from the original Gemini-only design — they
+# stop the model from pattern-matching past its own JSON turn into
+# fake "Tool Result:" / "User:" sections that the prompt format trains.
+_STOP = ["\nTool Result:", "\nUser:", "\nSystem:"]
 
 
-class LLMClient:
-    """Thin wrapper around Gemini. Backend swap = change this file only.
+class _BackendImpl(Protocol):
+    def generate(self, prompt: str) -> str: ...
 
-    Instance attributes:
-        api_key:          The GEMINI_API_KEY value (must be non-empty).
-        model:            Model name, default "gemini-2.5-flash-lite".
-        throttle_seconds: Seconds to sleep before every generate() call.
-                          Enforces the free-tier rate limit without caller
-                          cooperation.
-        _client:          Underlying google.genai.Client instance. Leading
-                          underscore = "private by convention, don't poke".
-    """
 
-    # Stop sequences: critical for our flatten-conversation prompt format.
-    # Without these, the model pattern-matches past its own JSON and starts
-    # hallucinating "Tool Result:" / "User:" sections — the prompt trains
-    # it on those labels. Each of these strings makes Gemini halt the
-    # instant it's about to emit them.
-    _STOP = ["\nTool Result:", "\nUser:", "\nSystem:"]
+def _detect_backend() -> str:
+    """Return 'anthropic' or 'gemini'. Explicit LLM_BACKEND wins."""
+    explicit = os.getenv("LLM_BACKEND", "").strip().lower()
+    if explicit in {"anthropic", "gemini"}:
+        return explicit
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    if os.getenv("GEMINI_API_KEY"):
+        return "gemini"
+    raise RuntimeError(
+        "no LLM key set — export ANTHROPIC_API_KEY or GEMINI_API_KEY"
+    )
 
-    def __init__(
-        self,
-        api_key: str | None = None,
-        model: str | None = None,
-        throttle_seconds: float | None = None,
-    ) -> None:
-        """Build a Gemini client.
 
-        Every argument follows the same pattern:
-            explicit value  →  environment variable  →  default (or error).
+class _AnthropicImpl:
+    """Anthropic Claude — single message, stop-sequence parity with Gemini path."""
 
-        This three-layer resolution is standard for Python CLIs:
-            - Tests can pass values directly (highest priority).
-            - Real runs pull from .env / shell env (middle priority).
-            - Missing values fall through to a sane default, or raise.
+    def __init__(self, api_key: str | None = None,
+                 model: str | None = None,
+                 throttle_seconds: float = 0.0):
+        from anthropic import Anthropic
+        self.api_key = api_key or os.environ["ANTHROPIC_API_KEY"]
+        self.model = model or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+        self.throttle_seconds = throttle_seconds
+        self._client = Anthropic(api_key=self.api_key)
 
-        Args:
-            api_key:          If None, read GEMINI_API_KEY from env. Required.
-            model:            If None, read GEMINI_MODEL (default: flash-lite).
-            throttle_seconds: If None, read THROTTLE_SECONDS (default: 4).
+    def generate(self, prompt: str) -> str:
+        if self.throttle_seconds > 0:
+            time.sleep(self.throttle_seconds)
+        resp = self._client.messages.create(
+            model=self.model,
+            max_tokens=4096,
+            stop_sequences=_STOP,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        for block in resp.content:
+            if block.type == "text":
+                return block.text or ""
+        return ""
 
-        Raises:
-            RuntimeError: If no API key can be resolved.
-        """
-        # `x or y` returns y when x is falsy (None, "", 0, []). Here it means:
-        #   "use `api_key` if caller passed one, otherwise fall back to env."
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            # Fail loudly at construction time rather than on the first
-            # .generate() call — easier to debug, closer to the real cause.
-            raise RuntimeError(
-                "GEMINI_API_KEY not set. Copy .env.example to .env and fill in."
-            )
 
-        # Model has a default, so the `or` chain goes:
-        #   caller-provided → env-provided → "gemini-2.5-flash-lite".
+class _GeminiImpl:
+    """Gemini — preserved verbatim from the previous Gemini-only client."""
+
+    def __init__(self, api_key: str | None = None,
+                 model: str | None = None,
+                 throttle_seconds: float | None = None):
+        from google import genai
+        self.api_key = api_key or os.environ["GEMINI_API_KEY"]
         self.model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
-
-        # Throttle can legitimately be 0 (tests), which is falsy. Using
-        # `throttle_seconds or ...` would incorrectly replace 0 with the
-        # env default. Use `is not None` to check "explicitly provided".
         self.throttle_seconds = (
-            throttle_seconds
-            if throttle_seconds is not None
+            throttle_seconds if throttle_seconds is not None
             else float(os.getenv("THROTTLE_SECONDS", "4"))
         )
-
-        # Build the underlying SDK client once; reuse for every call.
         self._client = genai.Client(api_key=self.api_key)
 
     def generate(self, prompt: str) -> str:
-        """Send a prompt, return the text response.
-
-        Sleeps `self.throttle_seconds` *before* the API call. Putting the
-        sleep before (not after) means:
-            - The first call of a session is slow, but subsequent calls
-              don't stack up against a rate limit window that hasn't
-              reset yet.
-            - If the caller aborts before the sleep finishes, no API call
-              ever happened, so no quota was burned.
-
-        Args:
-            prompt: The fully-rendered prompt string (system + history).
-
-        Returns:
-            The model's text response, or an empty string if the SDK
-            returned None (rare; can happen if safety filters fire).
-        """
         if self.throttle_seconds > 0:
             time.sleep(self.throttle_seconds)
-
-        # One-shot generation. For streaming or chat, the SDK offers
-        # .generate_content_stream() and .chats API — not used here
-        # because the agent loop re-sends the full history every turn.
         response = self._client.models.generate_content(
             model=self.model,
             contents=prompt,
-            config={"stop_sequences": self._STOP},
+            config={"stop_sequences": _STOP},
         )
-        # `response.text` can be None if the model refused to answer.
-        # The `or ""` ensures callers always get a string, not a Nonetype
-        # they'd have to special-case.
         return response.text or ""
+
+
+class LLMClient:
+    """Public interface used by the agent loop. Single-method facade."""
+
+    def __init__(self, *, api_key: str | None = None,
+                 model: str | None = None,
+                 throttle_seconds: float | None = None):
+        backend = _detect_backend()
+        if backend == "anthropic":
+            self._impl = _AnthropicImpl(
+                api_key=api_key, model=model,
+                throttle_seconds=throttle_seconds or 0.0,
+            )
+        else:
+            self._impl = _GeminiImpl(
+                api_key=api_key, model=model,
+                throttle_seconds=throttle_seconds,
+            )
+        self.backend = backend
+
+    def generate(self, prompt: str) -> str:
+        return self._impl.generate(prompt)
