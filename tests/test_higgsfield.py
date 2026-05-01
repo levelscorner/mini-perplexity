@@ -52,7 +52,10 @@ def test_unwrap_falls_back_to_text_json():
 
 
 def test_render_image_stub_mode(monkeypatch, tmp_path):
-    """Stub mode returns a fixture image path without hitting Higgsfield."""
+    """Stub mode copies a fixture into images/<slug>.png so the cards
+    route can serve it back to the browser."""
+    from pathlib import Path
+
     monkeypatch.setenv("RENDER_MODE", "stub")
     fixture = tmp_path / "stub.png"
     fixture.write_bytes(b"fake-png")
@@ -61,5 +64,7 @@ def test_render_image_stub_mode(monkeypatch, tmp_path):
     from higgsfield import render_image
     out = render_image("a cat in a tux")
     assert out.slug.startswith("stub-")
-    assert out.local_path == str(fixture)
+    assert out.url == f"/api/cards/{out.slug}.png"
+    assert Path(out.local_path).exists()
+    assert Path(out.local_path).read_bytes() == b"fake-png"
     assert out.model_used == "stub"

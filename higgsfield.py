@@ -266,7 +266,10 @@ def render_image(prompt: str, *, model: str | None = None,
 
 
 def _stub_render(prompt: str) -> ImageRender:
-    """Stub mode: copy a fixture, return its path. No Higgsfield call."""
+    """Stub mode: copy a fixture into images/<slug>.png so the regular
+    /api/cards/<slug>.png route serves it. No Higgsfield call."""
+    import shutil
+
     fixture = os.getenv("HIGGSFIELD_STUB_PATH")
     if not fixture or not Path(fixture).exists():
         raise RuntimeError(
@@ -274,10 +277,16 @@ def _stub_render(prompt: str) -> ImageRender:
             "Set it to a valid PNG path."
         )
     slug = f"stub-{uuid.uuid4().hex[:8]}"
+    images_dir = Path(__file__).resolve().parent / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    dst = images_dir / f"{slug}.png"
+    shutil.copy(fixture, dst)
     return ImageRender(
         slug=slug,
-        url=f"file://{fixture}",
-        local_path=fixture,
+        # Relative URL — the browser hits the FastAPI server's
+        # /api/cards/<slug>.png route, which serves the file.
+        url=f"/api/cards/{slug}.png",
+        local_path=str(dst),
         model_used="stub",
         duration_s=0.0,
     )

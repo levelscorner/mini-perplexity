@@ -7,3 +7,6 @@ answers/*
 !answers/.gitkeep
 .superpowers/
 stats.json
+logs/
+answers/
+images/
