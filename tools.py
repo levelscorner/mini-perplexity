@@ -435,8 +435,11 @@ def save_answer(
 # in system_prompt.md. That's the whole contract.
 # ---------------------------------------------------------------------------
 
+from tools_image import render_image as _render_image
+
 TOOLS = {
     "web_search": web_search,
     "fetch_page": fetch_page,
     "save_answer": save_answer,
+    "render_image": _render_image,
 }
