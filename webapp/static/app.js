@@ -25,6 +25,12 @@
   const questionEl   = $('question');
   const sendBtn      = $('send');
   const statusEl     = $('status');
+  const imageToggle  = $('image-toggle');
+  const themeToggle  = $('theme-toggle');
+
+  // Image-mode is one-shot: enabled by toggle or `/image` prefix, then
+  // reset after the next send.
+  let imageMode = false;
 
   // ── Show-reasoning toggle ──────────────────────────────────────────
 
@@ -34,6 +40,22 @@
 
   clearBtn.addEventListener('click', () => {
     reasoningBody.innerHTML = '';
+  });
+
+  // ── Image-mode toggle ──────────────────────────────────────────────
+
+  imageToggle.addEventListener('click', () => {
+    imageMode = !imageMode;
+    imageToggle.setAttribute('aria-pressed', imageMode ? 'true' : 'false');
+  });
+
+  // ── Theme toggle ───────────────────────────────────────────────────
+
+  themeToggle.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme');
+    const next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
   });
 
   // ── Helpers ────────────────────────────────────────────────────────
@@ -104,6 +126,89 @@
       .replace(/"/g, '&quot;');
   }
 
+  // ── Status pill — hybrid in-chat trace summary ─────────────────────
+  //
+  // One pill per chat turn, anchored under the user's bubble. While the
+  // agent is running, it shows "→ <tool_name>…" pulsing. When the turn
+  // ends, it collapses to "→ N tools · Xs ✓". Full inputs/outputs still
+  // live on /dashboard via /api/recent-activity.
+
+  function makeStatusPill() {
+    const pill = document.createElement('div');
+    pill.className = 'status-pill';
+    pill.dataset.calls = '0';
+    pill.dataset.start = String(Date.now());
+
+    const dot = document.createElement('span');
+    dot.className = 'pill-dot';
+    pill.appendChild(dot);
+
+    const txt = document.createElement('span');
+    txt.className = 'pill-text';
+    txt.textContent = 'thinking…';
+    pill.appendChild(txt);
+
+    chatEl.appendChild(pill);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return pill;
+  }
+
+  function pillToolCall(pill, name) {
+    if (!pill) return;
+    pill.dataset.calls = String(Number(pill.dataset.calls) + 1);
+    pill.querySelector('.pill-text').textContent = `→ ${name}…`;
+  }
+
+  function pillCollapse(pill) {
+    if (!pill) return;
+    const calls = Number(pill.dataset.calls);
+    const elapsed = ((Date.now() - Number(pill.dataset.start)) / 1000).toFixed(1);
+    const txt = calls === 0
+      ? `done · ${elapsed}s`
+      : `${calls} tool${calls === 1 ? '' : 's'} · ${elapsed}s ✓`;
+    pill.querySelector('.pill-text').textContent = txt;
+    pill.classList.add('collapsed');
+  }
+
+  // ── Image / comic strip rendering ─────────────────────────────────
+  //
+  // The server emits a synthetic `image` SSE event right after a
+  // render_image tool_result, with payload shape:
+  //   {kind:'image', slug, url, alt}
+  //   {kind:'comic_strip', panels:[{slug,url,alt,error?}, ...]}
+
+  function renderImagePayload(payload) {
+    if (payload.kind === 'image') {
+      const card = document.createElement('figure');
+      card.className = 'image-card';
+      card.innerHTML = `
+        <img src="${esc(payload.url)}" alt="${esc(payload.alt || '')}" />
+        <figcaption class="caption">
+          <span class="slug">${esc(payload.slug)}</span>
+          <a href="${esc(payload.url)}" target="_blank" rel="noopener">open ↗</a>
+        </figcaption>`;
+      chatEl.appendChild(card);
+    } else if (payload.kind === 'comic_strip') {
+      const panels = payload.panels || [];
+      const wrap = document.createElement('div');
+      wrap.className = 'comic-strip';
+      wrap.dataset.panels = String(panels.length);
+      for (const p of panels) {
+        const cell = document.createElement('div');
+        cell.className = 'panel' + (p.error ? ' error' : '');
+        if (p.url) {
+          cell.innerHTML =
+            `<img src="${esc(p.url)}" alt="${esc(p.alt || '')}" />`;
+        } else {
+          cell.textContent = `failed: ${p.error || 'unknown'}`;
+        }
+        wrap.appendChild(cell);
+      }
+      chatEl.appendChild(wrap);
+    }
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
   /** Pull the markdown answer + sources out of the last save_answer call. */
   function extractFinalAnswer(events) {
     // Walk events backwards to find the most recent save_answer.
@@ -151,15 +256,17 @@
 
   // ── Run the agent ──────────────────────────────────────────────────
 
-  async function ask(question) {
+  async function ask(question, opts) {
     const collected = [];
     let thinkingBubble;
+    const useImageMode = !!(opts && opts.imageMode);
 
     sendBtn.disabled = true;
     questionEl.disabled = true;
     statusEl.textContent = 'Running…';
 
     appendBubble('user', esc(question));
+    const pill = makeStatusPill();
     thinkingBubble = appendBubble('thinking', 'thinking…');
 
     let resp;
@@ -167,10 +274,11 @@
       resp = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, image_mode: useImageMode }),
       });
     } catch (err) {
       thinkingBubble.remove();
+      pillCollapse(pill);
       appendBubble('assistant', `<em>Network error:</em> ${esc(err.message)}`);
       reset();
       return;
@@ -178,6 +286,7 @@
 
     if (!resp.ok) {
       thinkingBubble.remove();
+      pillCollapse(pill);
       const text = await resp.text().catch(() => '');
       appendBubble('assistant', `<em>HTTP ${resp.status}:</em> ${esc(text)}`);
       reset();
@@ -213,19 +322,25 @@
         collected.push(event);
 
         // Always feed the reasoning panel.
-        if (event.kind !== 'user') appendEvent(event);
+        if (event.kind !== 'user' && event.kind !== 'image') appendEvent(event);
+
+        // Status pill updates — synthetic in-chat trace summary.
+        if (event.kind === 'tool_call') {
+          pillToolCall(pill, event.payload?.name || 'tool');
+        }
+
+        // Inline image / comic-strip card on the synthetic image SSE event.
+        if (event.kind === 'image') {
+          renderImagePayload(event.payload);
+        }
 
         // On final → swap the thinking bubble for the answer.
         if (event.kind === 'final') {
           thinkingBubble.remove();
+          pillCollapse(pill);
           appendBubble('assistant', renderAnswer(collected, event.payload));
           statusEl.textContent =
             `Done — ${collected.length} events.`;
-        }
-
-        if (event.kind === 'error' && !collected.some((e) => e.kind === 'final')) {
-          // Show first error if we never got a final answer.
-          // Don't remove the thinking bubble yet; iter may recover.
         }
       }
     }
@@ -233,6 +348,7 @@
     // Stream closed. If we never got a `final`, surface that.
     if (!collected.some((e) => e.kind === 'final')) {
       thinkingBubble.remove();
+      pillCollapse(pill);
       const errs = collected.filter((e) => e.kind === 'error');
       const msg = errs.length
         ? errs[errs.length - 1].payload
@@ -255,9 +371,27 @@
 
   composer.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const q = questionEl.value.trim();
+    let q = questionEl.value.trim();
     if (!q) return;
-    ask(q);
+
+    // `/image <prompt>` is sugar: strip the prefix, force image mode for this turn.
+    let mode = imageMode;
+    if (q.startsWith('/image ')) {
+      q = q.slice('/image '.length).trim();
+      mode = true;
+      if (!q) return;
+    } else if (q === '/image') {
+      // Just `/image` with nothing after → ignore.
+      return;
+    }
+
+    ask(q, { imageMode: mode });
+
+    // One-shot reset of the toggle (image mode resets per send).
+    if (imageMode) {
+      imageMode = false;
+      imageToggle.setAttribute('aria-pressed', 'false');
+    }
   });
 
   questionEl.focus();
