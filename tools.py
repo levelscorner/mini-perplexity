@@ -443,3 +443,138 @@ TOOLS = {
     "save_answer": save_answer,
     "render_image": _render_image,
 }
+
+
+# ---------------------------------------------------------------------------
+# Tool schemas — Anthropic native tool-use format.
+#
+# These schemas are passed to messages.create(tools=...) when running on
+# the Anthropic backend. The agent loop dispatches incoming tool_use
+# blocks against the TOOLS dict by name, so the `name` field MUST match
+# a key in TOOLS exactly.
+#
+# When adding a new tool: define it above, register in TOOLS, then add
+# its schema here. The Gemini path keeps working unchanged because it
+# uses prompt-engineered tool calls and ignores these schemas.
+# ---------------------------------------------------------------------------
+
+TOOL_SCHEMAS: list[dict[str, Any]] = [
+    {
+        "name": "web_search",
+        "description": (
+            "Search the web via DuckDuckGo. Returns up to `n` ranked "
+            "results, each with rank/title/url/snippet. Call this FIRST "
+            "for any question that needs current or external information."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Free-form search query.",
+                },
+                "n": {
+                    "type": "integer",
+                    "description": "Max results (1-10). Defaults to 5.",
+                    "minimum": 1,
+                    "maximum": 10,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "fetch_page",
+        "description": (
+            "Fetch a URL and extract its main article text (truncated to "
+            "~5000 chars). Returns url/title/text/truncated/bytes. Call "
+            "this on the 2-3 most relevant URLs from your search."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "URL to fetch and extract.",
+                },
+                "max_chars": {
+                    "type": "integer",
+                    "description": "Override the 5000-char truncation cap.",
+                    "minimum": 100,
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "save_answer",
+        "description": (
+            "Persist your final markdown answer to disk as an artifact. "
+            "Call this ONCE at the end of a research turn, when you have "
+            "a complete, well-cited answer. The `answer` MUST be markdown "
+            "with inline citation markers [1], [2], etc., and `sources` "
+            "MUST list {title,url} objects in citation-number order."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The original question this answers.",
+                },
+                "answer": {
+                    "type": "string",
+                    "description": (
+                        "Markdown answer with inline citations [1], [2], …"
+                    ),
+                },
+                "sources": {
+                    "type": "array",
+                    "description": (
+                        "Sources in citation-number order. Each entry "
+                        "must have title and url."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "url": {"type": "string"},
+                        },
+                        "required": ["title", "url"],
+                    },
+                },
+            },
+            "required": ["question", "answer", "sources"],
+        },
+    },
+    {
+        "name": "render_image",
+        "description": (
+            "Generate an image (or 3/4-panel comic strip) via Higgsfield. "
+            "Use panels=1 for a single image, panels=3 or 4 for a comic "
+            "strip when the prompt implies a story beat. Returns a JSON "
+            "envelope the frontend renders inline as an image card."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": (
+                        "Vivid, refined image description. Add visual "
+                        "detail (style, lighting, composition) the user "
+                        "didn't supply."
+                    ),
+                },
+                "panels": {
+                    "type": "integer",
+                    "description": (
+                        "1 = single image, 3 or 4 = comic strip. Default 1."
+                    ),
+                    "enum": [1, 3, 4],
+                },
+            },
+            "required": ["prompt"],
+        },
+    },
+]
