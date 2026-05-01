@@ -5,3 +5,4 @@ __pycache__/
 .env
 answers/*
 !answers/.gitkeep
+.superpowers/
