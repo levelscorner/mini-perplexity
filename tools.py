@@ -435,6 +435,7 @@ def save_answer(
 # in system_prompt.md. That's the whole contract.
 # ---------------------------------------------------------------------------
 
+from tools_dashboard import pin_to_dashboard as _pin_to_dashboard
 from tools_image import render_image as _render_image
 
 TOOLS = {
@@ -442,6 +443,7 @@ TOOLS = {
     "fetch_page": fetch_page,
     "save_answer": save_answer,
     "render_image": _render_image,
+    "pin_to_dashboard": _pin_to_dashboard,
 }
 
 
@@ -575,6 +577,34 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 },
             },
             "required": ["prompt"],
+        },
+    },
+    {
+        "name": "pin_to_dashboard",
+        "description": (
+            "Pin a card to the Dashboard's Feed tab so the user can "
+            "see it in the Prefab UI. Use this whenever the user asks "
+            "to 'show on dashboard', 'pin', or 'display' a result. "
+            "Title is the heading; content is markdown body."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Short heading for the card.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Markdown body of the card.",
+                },
+                "kind": {
+                    "type": "string",
+                    "description": "Display category.",
+                    "enum": ["note", "answer", "image", "link"],
+                },
+            },
+            "required": ["title", "content"],
         },
     },
 ]

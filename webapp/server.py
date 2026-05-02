@@ -122,8 +122,11 @@ for _name, _fn in list(_RAW_TOOLS.items()):
 # FastAPI app
 # ---------------------------------------------------------------------------
 app = FastAPI(
-    title="Mini Perplexity",
-    description="Chat agent with image generation via Higgsfield.",
+    title="MINION",
+    description=(
+        "Research + image-gen + dashboard agent. Five tools, native "
+        "Anthropic tool use, Prefab dashboard, Higgsfield image rendering."
+    ),
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -264,6 +267,13 @@ def api_stats() -> JSONResponse:
 @app.get("/api/recent-activity")
 def api_recent_activity() -> JSONResponse:
     return JSONResponse({"events": list(reversed(_RECENT_ACTIVITY))})
+
+
+@app.get("/api/feed")
+def api_feed() -> JSONResponse:
+    """Pinned cards (newest first) for the dashboard Feed tab."""
+    from tools_dashboard import list_pinned
+    return JSONResponse({"items": list_pinned(limit=50)})
 
 
 @app.get("/api/cards/{slug}.png")
