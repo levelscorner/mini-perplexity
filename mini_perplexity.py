@@ -113,7 +113,8 @@ def _run_native_tool_loop(
     system: str,
     user_query: str,
     max_iterations: int,
-) -> int:
+    seed_messages: list[dict] | None = None,
+) -> tuple[int, list[dict]]:
     """Anthropic native-tool-use loop.
 
     Round-trips structured tool_use / tool_result content blocks instead
@@ -127,9 +128,17 @@ def _run_native_tool_loop(
             ...
         ]
 
-    Returns rc=0 on a final answer, rc=2 on iteration exhaustion.
+    Args:
+        seed_messages: Prior conversation history to thread the new
+                       user_query onto. None = start fresh.
+
+    Returns:
+        (rc, final_messages) where rc is 0 on success, 2 on exhaustion,
+        and final_messages is the full conversation list (caller can
+        persist this for the next turn).
     """
-    messages: list[dict] = [{"role": "user", "content": user_query}]
+    messages: list[dict] = list(seed_messages or [])
+    messages.append({"role": "user", "content": user_query})
     final_answer: str | None = None
 
     for iteration in range(1, max_iterations + 1):
@@ -180,7 +189,8 @@ def _run_native_tool_loop(
         ui.error(max_iterations,
                  "Max iterations reached without a final answer.")
 
-    return 0 if final_answer is not None else 2
+    rc = 0 if final_answer is not None else 2
+    return rc, messages
 
 
 def run_agent(
@@ -188,7 +198,9 @@ def run_agent(
     max_iterations: int = 8,
     on_event: Callable[[dict], None] | None = None,
     render_terminal: bool = True,
-) -> int:
+    seed_messages: list[dict] | None = None,
+    return_messages: bool = False,
+) -> int | tuple[int, list[dict]]:
     """Execute the agent loop against one user query.
 
     This is the whole agent. The shape:
@@ -251,13 +263,15 @@ def run_agent(
     # loop that round-trips tool_use / tool_result content blocks. The
     # prompt-engineered path below is unchanged and still services Gemini.
     if llm.supports_native_tools():
-        rc = _run_native_tool_loop(
+        rc, final_messages = _run_native_tool_loop(
             llm=llm, ui=ui, system=system, user_query=user_query,
-            max_iterations=max_iterations,
+            max_iterations=max_iterations, seed_messages=seed_messages,
         )
         saved_to = ui.save()
         if saved_to is not None:
             ui.system(f"Full reasoning chain saved to {saved_to}")
+        if return_messages:
+            return rc, final_messages
         return rc
 
     # `messages` accumulates the full conversation. On each iteration we

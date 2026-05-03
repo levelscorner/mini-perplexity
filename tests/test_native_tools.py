@@ -207,11 +207,16 @@ def test_native_tool_loop_full_round_trip(monkeypatch):
     from ui import ReasoningChainUI
 
     ui = ReasoningChainUI(render_terminal=False)
-    rc = _run_native_tool_loop(
+    rc, final_messages = _run_native_tool_loop(
         llm=client, ui=ui, system="be helpful",
         user_query="render a cat", max_iterations=5,
     )
     assert rc == 0
+    # Final messages should include the seeded user turn + 3 more
+    # (assistant tool_use, user tool_result, assistant end_turn).
+    assert len(final_messages) == 4
+    assert final_messages[0]["role"] == "user"
+    assert final_messages[0]["content"] == "render a cat"
     # Two messages.create calls: one to fire the tool, one to wrap up.
     assert client._impl._client.messages.create.call_count == 2
 
@@ -229,6 +234,43 @@ def test_native_tool_loop_full_round_trip(monkeypatch):
     assert isinstance(tool_results, list)
     assert tool_results[0]["type"] == "tool_result"
     assert tool_results[0]["tool_use_id"] == "toolu_a"
+
+
+def test_native_tool_loop_threads_seed_messages(monkeypatch):
+    """Seed messages from a prior turn must reach the LLM on the next call."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    fake_resp = _make_anthropic_message(
+        stop_reason="end_turn",
+        content_blocks=[_text_block("OK, pinned.")],
+    )
+
+    from llm import LLMClient
+    client = LLMClient()
+    client._impl._client.messages = MagicMock()
+    client._impl._client.messages.create = MagicMock(return_value=fake_resp)
+
+    seed = [
+        {"role": "user", "content": "what's new in claude 4.7?"},
+        {"role": "assistant", "content": [_text_block("It supports …")]},
+    ]
+
+    from mini_perplexity import _run_native_tool_loop
+    from ui import ReasoningChainUI
+
+    ui = ReasoningChainUI(render_terminal=False)
+    rc, final_messages = _run_native_tool_loop(
+        llm=client, ui=ui, system="x",
+        user_query="pin that to my dashboard", max_iterations=3,
+        seed_messages=seed,
+    )
+    assert rc == 0
+
+    # The first call's messages list must contain the seed + the new user turn.
+    first_call_msgs = client._impl._client.messages.create.call_args_list[0].kwargs["messages"]
+    assert first_call_msgs[0]["content"] == "what's new in claude 4.7?"
+    assert first_call_msgs[1]["role"] == "assistant"
+    assert first_call_msgs[2]["content"] == "pin that to my dashboard"
 
 
 def test_tool_schemas_match_tools_dict():

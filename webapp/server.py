@@ -26,6 +26,7 @@ import asyncio
 import json
 import sys
 import time
+import uuid
 from collections import deque
 from pathlib import Path
 from threading import Thread
@@ -149,6 +150,9 @@ class RunRequest(BaseModel):
     question: str
     max_iterations: int = 8
     image_mode: bool = False
+    conversation_id: str | None = None
+    """Opaque ID — when present, the agent is seeded with prior turns
+    from this conversation. None = start a fresh conversation."""
 
 
 _IMAGE_MODE_HINT = (
@@ -156,6 +160,12 @@ _IMAGE_MODE_HINT = (
     "`render_image` tool with a refined, vivid prompt. Pick `panels=3` "
     "or `panels=4` if a comic strip suits the request, else `panels=1`.]"
 )
+
+# Server-side conversation store. Keyed by client-supplied conversation_id.
+# Each value is the literal Anthropic Messages API list — user/assistant
+# turns including tool_use + tool_result blocks. In-memory only; survives
+# requests but not server restart, which is fine for this app.
+_CONVERSATIONS: dict[str, list[dict]] = {}
 
 
 def _maybe_emit_image(event: dict[str, Any]) -> dict[str, Any] | None:
@@ -196,13 +206,24 @@ def _maybe_emit_image(event: dict[str, Any]) -> dict[str, Any] | None:
 
 @app.post("/api/run")
 async def run(body: RunRequest) -> StreamingResponse:
-    """Run the agent on a question, stream events as they happen."""
+    """Run the agent on a question, stream events as they happen.
+
+    Threads conversation history through `conversation_id`: when the
+    client supplies one, the agent is seeded with prior turns so the
+    user can say "save it to my dashboard" and the agent knows what
+    "it" refers to. The first turn returns a fresh server-allocated
+    conversation_id via the SSE `system` event before `final`.
+    """
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
 
     question = body.question
     if body.image_mode:
         question = body.question + _IMAGE_MODE_HINT
+
+    # Resolve conversation: client-supplied ID wins; else mint a new one.
+    conv_id = body.conversation_id or uuid.uuid4().hex
+    seed_messages = _CONVERSATIONS.get(conv_id, [])
 
     def on_event(event_dict: dict[str, Any]) -> None:
         loop.call_soon_threadsafe(queue.put_nowait, event_dict)
@@ -212,12 +233,26 @@ async def run(body: RunRequest) -> StreamingResponse:
 
     def agent_thread() -> None:
         try:
-            run_agent(
+            # Tell the frontend which conversation this turn lives in
+            # — client should echo it back on subsequent /api/run calls.
+            loop.call_soon_threadsafe(queue.put_nowait, {
+                "kind": "conversation",
+                "iteration": 0,
+                "payload": {"conversation_id": conv_id},
+                "ts": "",
+            })
+            result = run_agent(
                 question,
                 max_iterations=body.max_iterations,
                 on_event=on_event,
                 render_terminal=False,
+                seed_messages=seed_messages,
+                return_messages=True,
             )
+            # When return_messages=True, run_agent returns (rc, messages).
+            if isinstance(result, tuple):
+                _rc, final_messages = result
+                _CONVERSATIONS[conv_id] = final_messages
         except Exception as exc:  # noqa: BLE001
             loop.call_soon_threadsafe(
                 queue.put_nowait,

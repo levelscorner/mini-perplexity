@@ -27,10 +27,16 @@
   const statusEl     = $('status');
   const imageToggle  = $('image-toggle');
   const themeToggle  = $('theme-toggle');
+  const newConvoBtn  = $('new-convo');
 
   // Image-mode is one-shot: enabled by toggle or `/image` prefix, then
   // reset after the next send.
   let imageMode = false;
+
+  // Conversation context — server allocates the ID on the first turn
+  // via the `conversation` SSE event; we echo it back on every
+  // subsequent /api/run so the agent threads prior turns into context.
+  let conversationId = null;
 
   // ── Show-reasoning toggle ──────────────────────────────────────────
 
@@ -56,6 +62,16 @@
     const next = cur === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('theme', next);
+  });
+
+  // ── New-conversation reset ─────────────────────────────────────────
+
+  newConvoBtn.addEventListener('click', () => {
+    conversationId = null;
+    chatEl.innerHTML = '';
+    reasoningBody.innerHTML = '';
+    statusEl.textContent = 'New conversation.';
+    questionEl.focus();
   });
 
   // ── Helpers ────────────────────────────────────────────────────────
@@ -274,7 +290,11 @@
       resp = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, image_mode: useImageMode }),
+        body: JSON.stringify({
+          question,
+          image_mode: useImageMode,
+          conversation_id: conversationId,
+        }),
       });
     } catch (err) {
       thinkingBubble.remove();
@@ -320,6 +340,14 @@
         }
 
         collected.push(event);
+
+        // Capture the server-allocated conversation_id so subsequent
+        // turns thread context properly.
+        if (event.kind === 'conversation') {
+          const cid = event.payload?.conversation_id;
+          if (cid) conversationId = cid;
+          continue;  // don't render the bookkeeping event in chat
+        }
 
         // Always feed the reasoning panel.
         if (event.kind !== 'user' && event.kind !== 'image') appendEvent(event);
