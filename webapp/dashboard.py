@@ -7,8 +7,8 @@ from __future__ import annotations
 from prefab_ui.actions import Fetch, SetState, ShowToast
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
-    Badge, Button, Card, Column, Else, Grid, Heading, If, Metric, Row,
-    Tab, Tabs, Text,
+    Badge, Button, Card, Column, Else, Grid, Heading, If, Markdown, Metric,
+    Row, Tab, Tabs, Text,
 )
 from prefab_ui.components.control_flow import ForEach
 
@@ -32,6 +32,12 @@ _ACTIVITY_FETCH = Fetch(
     url="/api/recent-activity",
     method="GET",
     on_success=SetState("activity", "{{ $result.events }}"),
+)
+
+_FEED_FETCH = Fetch(
+    url="/api/feed",
+    method="GET",
+    on_success=SetState("feed", "{{ $result.items }}"),
 )
 
 
@@ -90,6 +96,29 @@ def _tab_activity() -> None:
                         Badge("ok", variant="success")
 
 
+def _tab_feed() -> None:
+    with Column(gap=3):
+        with Row(gap=2, css_class="items-center justify-between"):
+            Heading("Pinned by the agent", level=3)
+            Button("Refresh", variant="outline", size="sm", on_click=_FEED_FETCH)
+        Text("Cards the agent has pinned via `pin_to_dashboard`. The "
+             "agent fires this when the user asks to 'show on dashboard', "
+             "'pin', or 'display' a result.",
+             css_class="text-muted-foreground text-sm")
+        with If("feed.length == 0"):
+            Text("No pins yet — ask the agent to pin something.",
+                 css_class="text-muted-foreground")
+        with ForEach("feed") as item:
+            with Card():
+                with Column(gap=2):
+                    with Row(gap=2, css_class="items-center"):
+                        Heading(item.title, level=4)
+                        Badge(item.kind, variant="secondary")
+                        Text(item.pinned_at,
+                             css_class="font-mono text-xs text-muted-foreground ml-auto")
+                    Markdown(item.content)
+
+
 def _tab_auth() -> None:
     with Column(gap=3):
         Heading("Higgsfield connection", level=3)
@@ -125,13 +154,15 @@ def _tab_auth() -> None:
 
 
 def build_dashboard() -> PrefabApp:
-    on_mount = [_STATS_FETCH, _ACTIVITY_FETCH]
+    on_mount = [_STATS_FETCH, _ACTIVITY_FETCH, _FEED_FETCH]
     with Column(gap=5, css_class="max-w-[1100px] mx-auto py-6 px-4") as view:
-        Heading("Mini Perplexity — Dashboard", level=1)
-        Text("Stats, activity, and auth for the chat agent.",
+        Heading("MINION — Dashboard", level=1)
+        Text("Feed, stats, activity, and auth for the chat agent.",
              css_class="text-muted-foreground text-sm")
         with Card(css_class="overflow-hidden"):
-            with Tabs(value="stats"):
+            with Tabs(value="feed"):
+                with Tab("Feed", value="feed"):
+                    _tab_feed()
                 with Tab("Stats", value="stats"):
                     _tab_stats()
                 with Tab("Activity", value="activity"):
@@ -147,6 +178,7 @@ def build_dashboard() -> PrefabApp:
             "totals_seconds": 0,
             "chat_turns": 0, "chat_in": 0, "chat_out": 0,
             "activity": [],
+            "feed": [],
             "auth_state": "unknown", "auth_variant": "secondary",
             "auth_info": "Click Check status.",
         },

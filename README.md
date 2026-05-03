@@ -1,22 +1,48 @@
-# Mini Perplexity
+# MINION
 
-A research agent that mimics the core loop of Perplexity AI. Single-agent loop, three custom tools, reasoning chain rendered to the terminal in real time and persisted to `logs/`.
+A research, image-generation, and dashboard-pinning agent. Native Anthropic tool use, real FastMCP server, Prefab dashboard, Higgsfield image rendering.
 
-> Ask a question → agent searches the web → reads the top 2–3 sources → synthesizes a cited answer → saves it to disk as markdown.
+> Ask anything → MINION searches the web, reads sources, can generate images via Higgsfield, pin findings to a Prefab dashboard, and persist cited markdown answers to disk.
 
-Originally built as the **S03 submission** for [EAG V3](https://github.com/levelscorner/levelscorner-eva3) (The School of AI). Step-by-step build walkthrough lives in [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md).
+Originally [`mini-perplexity`](https://github.com/levelscorner/mini-perplexity) (S03 EAG V3 submission). The S04 build extends it with image generation, MCP tooling, and the Prefab dashboard.
 
 ---
 
-## The three tools
+## Five tools
 
 | Tool | Purpose |
 |------|---------|
-| `web_search(query, n=5)` | DuckDuckGo search via the `duckduckgo-search` library. **No API key required.** Returns ranked `{rank, title, url, snippet}` results. |
-| `fetch_page(url)` | Fetches the URL and extracts clean main-article text using `trafilatura`. Returns `{url, title, text, truncated, bytes}`, truncated to ~5000 chars to keep LLM context tight. |
-| `save_answer(question, answer, sources)` | Persists the final markdown answer with numbered citations to `answers/<slug>.md`. Refuses to overwrite (appends suffix). |
+| `web_search(query, n=5)` | DuckDuckGo search via `ddgs`. Ranked `{rank, title, url, snippet}` results. |
+| `fetch_page(url)` | Extract main-article text via `trafilatura`, truncated to ~5000 chars. |
+| `save_answer(question, answer, sources)` | Persist final markdown answer with numbered citations to `answers/<slug>.md`. |
+| `render_image(prompt, panels=1)` | Generate 1 image or a 3/4-panel comic strip via Higgsfield (OAuth, cached tokens). Frontend renders inline. |
+| `pin_to_dashboard(title, content, kind)` | Push a card to the Prefab dashboard's Feed tab. `kind ∈ note\|answer\|image\|link`. |
 
-The system prompt (`system_prompt.md`) enforces a `search → fetch ×2–3 → save → answer` flow. Max 8 iterations.
+All five are exposed two ways:
+- **In-process** to the chat agent via `tools.TOOLS`
+- **As a real MCP server** via `minion_mcp/server.py` (FastMCP, stdio or streamable-http)
+
+---
+
+## What's in the box
+
+```
+minion/                       (repo dir is mini-perplexity for legacy reasons)
+├── llm.py                    pluggable LLM (Anthropic-first, Gemini fallback)
+├── tools.py + TOOL_SCHEMAS   web_search · fetch_page · save_answer + Anthropic tool schemas
+├── tools_image.py            render_image (single or comic strip)
+├── tools_dashboard.py        pin_to_dashboard + feed JSON storage
+├── higgsfield.py             OAuth + Higgsfield render wrapper
+├── auth.py                   OAuth bootstrap CLI
+├── stats.py                  atomic JSON aggregator
+├── mini_perplexity.py        agent entrypoint (native + prompt-engineered paths)
+├── system_prompt.md          MINION's prompt
+├── minion_mcp/server.py      FastMCP server (stdio | --http)
+└── webapp/
+    ├── server.py             FastAPI: /, /api/run (SSE), /api/stats, /api/feed, /dashboard
+    ├── dashboard.py          Prefab dashboard (Feed · Stats · Activity · Auth)
+    └── static/               chat shell (image toggle, dark mode, status pill)
+```
 
 ---
 
@@ -25,108 +51,106 @@ The system prompt (`system_prompt.md`) enforces a `search → fetch ×2–3 → 
 ```bash
 git clone git@github.com:levelscorner/mini-perplexity.git
 cd mini-perplexity
+git checkout s04/minion
 
-# Virtualenv (uv recommended)
-uv venv
-source .venv/bin/activate
-uv pip install -e .
-# or: pip install -e .
-
+uv sync --extra web --extra test
 cp .env.example .env
-$EDITOR .env   # set GEMINI_API_KEY=... from https://aistudio.google.com/apikey
-```
+$EDITOR .env   # set ANTHROPIC_API_KEY (preferred) or GEMINI_API_KEY
 
-Free tier: 15 RPM / 500 RPD. Default model: `gemini-2.5-flash-lite`. Override
-via `GEMINI_MODEL` in `.env` if you need the pro tier.
+# One-time: bootstrap Higgsfield OAuth (opens browser, caches tokens)
+uv run python auth.py
+uv run python auth.py --check
+```
 
 ---
 
 ## Run
 
-```bash
-python mini_perplexity.py "What's new in Claude 4.7?"
-```
-
-Terminal renders the full reasoning chain:
-
-- **You** — the question
-- **Iteration N** — LLM thought · tool call (`web_search` / `fetch_page` / `save_answer`) · tool result
-- **Final answer** — one-line summary + the path to the saved markdown
-
-Every event also persists to `logs/run-<timestamp>.json` for the submission log paste. The final answer lives in `answers/<slug>.md`.
-
-### Sandbox the answer output
+### Web app (chat + dashboard)
 
 ```bash
-ANSWERS_DIR=/tmp/perplexity-sandbox python mini_perplexity.py "Your question"
+uv run uvicorn webapp.server:app --port 8000
+open http://localhost:8000          # chat
+open http://localhost:8000/dashboard # Feed · Stats · Activity · Auth
 ```
 
----
-
-## Example questions
-
-Each exercises a different agent behavior:
+### CLI agent
 
 ```bash
-# Fresh news — exercises search + fetch + synthesis
-python mini_perplexity.py "What happened in the latest Apple event?"
+uv run python mini_perplexity.py "Find ownership details of Tata Sons, save to a file, pin to my dashboard"
+```
 
-# Technical docs — exercises source selection
-python mini_perplexity.py "How do I use Gemini's thinking mode in the API?"
+### Standalone MCP server
 
-# Controversial or multi-source — exercises contradiction handling
-python mini_perplexity.py "Is the o1 model better than Claude for reasoning benchmarks?"
+```bash
+# stdio (for Claude Desktop / MCP Inspector)
+uv run python -m minion_mcp.server
+
+# streamable-http on port 9000
+uv run python -m minion_mcp.server --http --port 9000
 ```
 
 ---
 
-## How the demo maps to the S03 rubric
+## The "all 3 tools" demo
 
-| S03 Requirement | Where it lives |
-|-----------------|----------------|
-| Agentic loop calling LLM multiple times | `mini_perplexity.py` → `run_agent()` |
-| Each query carries all past interaction | `_render_conversation()` flattens the full `messages[]` history every iteration |
-| ≥ 3 custom tool functions | `tools.py` — `web_search`, `fetch_page`, `save_answer` |
-| Display the reasoning chain | `ui.py` — `ReasoningChainUI` panels per step |
-| YouTube demo + LLM logs | Record terminal; paste `logs/run-*.json` into submission doc |
+The S04 spec wants one prompt that exercises an internet tool, a file-CRUD tool, and a Prefab UI tool.
 
----
-
-## Layout
-
-```
-mini-perplexity/
-├── README.md            # this file
-├── pyproject.toml       # package metadata + deps
-├── .env.example         # copy to .env and fill GEMINI_API_KEY
-├── system_prompt.md     # the agent's instructions (external for readability)
-├── mini_perplexity.py   # entrypoint + agent loop
-├── llm.py               # Gemini client with free-tier throttling
-├── parser.py            # fence-stripping + regex-fallback JSON parser
-├── tools.py             # web_search, fetch_page, save_answer
-├── ui.py                # rich-based reasoning-chain renderer + log writer
-├── answers/             # generated markdown answers (gitignored via .gitignore)
-└── logs/                # run transcripts (gitignored)
+```bash
+"Find the ownership details of Tata Sons, save them to a text file, and pin to my dashboard"
 ```
 
-`llm.py`, `parser.py`, and `ui.py` are deliberately self-contained — no shared package. Each module reads top-to-bottom on its own.
+What the agent fires (visible in the chat status pill + dashboard Activity tab):
+
+```
+web_search        → "Tata Sons ownership"          (internet)
+fetch_page        → top-1 / top-2 result URLs       (internet)
+save_answer       → answers/tata-sons-ownership.md  (file CRUD)
+pin_to_dashboard  → feed/<ts>-tata-sons-...json     (Prefab UI)
+final answer
+```
+
+Watch:
+- The chat reply lands.
+- `/dashboard` Feed tab now has a new card.
+- `/dashboard` Stats tab shows the four tool counts.
+- `answers/<slug>.md` exists on disk.
 
 ---
 
-## Demo script
+## Image gen
 
-1. Wide terminal so `rich` panels render cleanly.
-2. `python mini_perplexity.py "What's new in Claude 4.7?"`
-3. Watch the agent: `web_search` → triage to 3 URLs → `fetch_page` ×3 → `save_answer` → final answer with path.
-4. `cat answers/what-s-new-in-claude-4-7.md` — show the artifact.
-5. Inspect `logs/run-<ts>.json` for the full reasoning chain.
+```
+🖼 toggle next to Send  →  one-shot image mode for the next message.
+/image <prompt>          →  same effect inline.
+```
+
+Examples:
+- `/image a cat in a tuxedo, ghibli style` → single image card inline
+- `/image a corgi astronaut on the moon, 3-panel comic strip style` → 3-panel grid
+
+The agent decides single vs comic-strip from the prompt. Stub mode (`RENDER_MODE=stub`, `HIGGSFIELD_STUB_PATH=/path/to.png`) skips Higgsfield entirely.
 
 ---
 
-## Build walkthrough
+## How the demo maps to the rubric
 
-For a step-by-step explanation of how this agent was built — what each module does, why the loop is shaped this way, and the design decisions behind it — read [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md).
+| S04 requirement | Where |
+|---|---|
+| Real MCP server with 3+ tools | `minion_mcp/server.py` (6 tools exposed) |
+| Internet tool | `web_search` + `fetch_page` |
+| File CRUD | `save_answer` (write), `tools_dashboard.list_pinned` (read), `feed/<slug>.json` files (R/U/D via filesystem) |
+| Push UI tool | `pin_to_dashboard` → Prefab Feed tab |
+| Prefab UI consumes the tools | `webapp/dashboard.py` (Feed / Stats / Activity / Auth tabs) |
+| Single prompt fires all three | "Find ownership of Tata Sons, save to file, pin to dashboard" → 4 tool calls |
+| Native Anthropic tool use | `llm.LLMClient.chat_with_tools` + `mini_perplexity._run_native_tool_loop` |
 
-## Roadmap — what to build next
+---
 
-The curated learning path from this single-agent loop to a production-grade orchestration stack (MCP → memory → evals → planning → multi-agent → A2A) lives in [`docs/ROADMAP.md`](docs/ROADMAP.md). Grounded in 2026 industry consensus + the EAG V3 curriculum.
+## Branches
+
+- `main` — original mini-perplexity (Gemini, 3-tool research agent)
+- `s04/cat-news-mcp` — original S04 sketch (Newsroom theme; superseded)
+- `s04/mp-image-gen` — clean image-gen + dashboard build
+- `s04/native-tools` — native Anthropic tool use on top of the above
+- **`s04/minion`** ← current; adds the FastMCP server, `pin_to_dashboard`, Feed tab, brand rename

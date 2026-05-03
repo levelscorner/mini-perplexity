@@ -16,12 +16,37 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 # Stop sequences inherited from the original Gemini-only design — they
 # stop the model from pattern-matching past its own JSON turn into
 # fake "Tool Result:" / "User:" sections that the prompt format trains.
 _STOP = ["\nTool Result:", "\nUser:", "\nSystem:"]
+
+
+@dataclass
+class ToolCall:
+    """One tool_use block from a native-tool-use response."""
+
+    id: str          # tool_use_id — used on the matching tool_result block
+    name: str        # tool name (must match a key in tools.TOOLS)
+    input: dict[str, Any]
+
+
+@dataclass
+class LLMTurn:
+    """Normalized native-tool-use response. Cross-backend shape."""
+
+    stop_reason: str           # "end_turn" | "tool_use" | "max_tokens" | …
+    text: str = ""             # combined text from all text blocks
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    usage_in: int = 0
+    usage_out: int = 0
+    raw_content: list[Any] = field(default_factory=list)
+    """Raw response.content — needed verbatim when echoing the assistant
+    turn back into the next messages.create call (Anthropic requires
+    the tool_use blocks to round-trip)."""
 
 
 class _BackendImpl(Protocol):
@@ -67,6 +92,42 @@ class _AnthropicImpl:
             if block.type == "text":
                 return block.text or ""
         return ""
+
+    def chat_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        system: str,
+        tools: list[dict[str, Any]],
+    ) -> LLMTurn:
+        """Native Anthropic tool use. One round-trip; caller loops."""
+        if self.throttle_seconds > 0:
+            time.sleep(self.throttle_seconds)
+        resp = self._client.messages.create(
+            model=self.model,
+            max_tokens=4096,
+            system=system,
+            tools=tools,
+            messages=messages,
+        )
+
+        text_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
+        for block in resp.content:
+            if block.type == "text":
+                text_parts.append(block.text or "")
+            elif block.type == "tool_use":
+                tool_calls.append(
+                    ToolCall(id=block.id, name=block.name, input=dict(block.input))
+                )
+
+        return LLMTurn(
+            stop_reason=resp.stop_reason or "",
+            text="\n".join(p for p in text_parts if p),
+            tool_calls=tool_calls,
+            usage_in=getattr(resp.usage, "input_tokens", 0),
+            usage_out=getattr(resp.usage, "output_tokens", 0),
+            raw_content=list(resp.content),
+        )
 
 
 class _GeminiImpl:
@@ -116,3 +177,22 @@ class LLMClient:
 
     def generate(self, prompt: str) -> str:
         return self._impl.generate(prompt)
+
+    def supports_native_tools(self) -> bool:
+        """True when this backend handles tool schemas natively."""
+        return self.backend == "anthropic"
+
+    def chat_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        system: str,
+        tools: list[dict[str, Any]],
+    ) -> LLMTurn:
+        """Native tool-use round-trip. Anthropic only — caller must check
+        supports_native_tools() first and fall back to the prompt-engineered
+        path otherwise."""
+        if not self.supports_native_tools():
+            raise RuntimeError(
+                f"{self.backend} backend does not support native tool use"
+            )
+        return self._impl.chat_with_tools(messages, system, tools)

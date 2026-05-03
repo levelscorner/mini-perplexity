@@ -29,6 +29,13 @@ HIGGSFIELD_URL = os.getenv("HIGGSFIELD_MCP_URL", "https://mcp.higgsfield.ai/mcp"
 TOKEN_DIR = Path.home() / ".mini-perplexity" / "tokens"
 TOKEN_DIR.mkdir(parents=True, exist_ok=True)
 
+# Pin a fixed OAuth callback port so the redirect_uri stays constant
+# across runs. Higgsfield (and most OAuth 2.0 servers) reject any URI
+# that isn't pre-registered against the client; with callback_port=None
+# FastMCP picks a random free port each time, which breaks every
+# subsequent re-auth. Override via OAUTH_CALLBACK_PORT if 47823 is taken.
+OAUTH_CALLBACK_PORT = int(os.getenv("OAUTH_CALLBACK_PORT", "47823"))
+
 POLL_INTERVAL_SECONDS = 5
 # Higgsfield jobs queue when many fire in parallel; 1200s headroom proven on s04.
 MAX_WAIT_SECONDS = 1200
@@ -73,13 +80,18 @@ def _token_storage() -> DiskStore:
 
 
 def _oauth() -> OAuth:
-    """FastMCP OAuth helper preconfigured for Higgsfield."""
+    """FastMCP OAuth helper preconfigured for Higgsfield.
+
+    Pin callback_port so the redirect_uri is identical across runs;
+    Higgsfield rejects any URI that wasn't pre-registered against the
+    client, so a random port = "redirect_uri does not match" each time.
+    """
     return OAuth(
         mcp_url=HIGGSFIELD_URL,
         client_name="mini-perplexity",
         scopes=None,
         token_storage=_token_storage(),
-        callback_port=None,
+        callback_port=OAUTH_CALLBACK_PORT,
     )
 
 

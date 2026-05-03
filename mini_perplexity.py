@@ -20,9 +20,9 @@ from typing import Callable
 
 from dotenv import load_dotenv
 
-from llm import LLMClient
+from llm import LLMClient, LLMTurn, ToolCall
 from parser import parse_llm_response
-from tools import TOOLS
+from tools import TOOL_SCHEMAS, TOOLS
 from ui import ReasoningChainUI
 
 HERE = Path(__file__).resolve().parent
@@ -85,12 +85,122 @@ def _render_conversation(system: str, messages: list[dict]) -> str:
     return "\n".join(parts)
 
 
+def _dispatch_tool(name: str, args: dict, iteration: int,
+                   ui: ReasoningChainUI) -> str:
+    """Run one tool by name. Returns a JSON string (the tool's contract).
+    Errors come back as data so the LLM can recover on the next turn."""
+    ui.tool_call(iteration, name, args)
+    if name not in TOOLS:
+        result = json.dumps({
+            "error": f"unknown tool '{name}'",
+            "available": sorted(TOOLS.keys()),
+        })
+    else:
+        try:
+            result = TOOLS[name](**args)
+        except TypeError as exc:
+            result = json.dumps({"error": f"bad arguments: {exc}"})
+        except Exception as exc:  # noqa: BLE001
+            result = json.dumps({"error": f"{type(exc).__name__}: {exc}"})
+    ui.tool_result(iteration, name, result)
+    return result
+
+
+def _run_native_tool_loop(
+    *,
+    llm: LLMClient,
+    ui: ReasoningChainUI,
+    system: str,
+    user_query: str,
+    max_iterations: int,
+    seed_messages: list[dict] | None = None,
+) -> tuple[int, list[dict]]:
+    """Anthropic native-tool-use loop.
+
+    Round-trips structured tool_use / tool_result content blocks instead
+    of prompt-engineered JSON. The conversation `messages` is the literal
+    Anthropic Messages API list:
+
+        [
+            {"role": "user", "content": <text>},
+            {"role": "assistant", "content": [<text>, <tool_use>...]},
+            {"role": "user", "content": [<tool_result>...]},
+            ...
+        ]
+
+    Args:
+        seed_messages: Prior conversation history to thread the new
+                       user_query onto. None = start fresh.
+
+    Returns:
+        (rc, final_messages) where rc is 0 on success, 2 on exhaustion,
+        and final_messages is the full conversation list (caller can
+        persist this for the next turn).
+    """
+    messages: list[dict] = list(seed_messages or [])
+    messages.append({"role": "user", "content": user_query})
+    final_answer: str | None = None
+
+    for iteration in range(1, max_iterations + 1):
+        ui.iteration_header(iteration)
+
+        try:
+            turn: LLMTurn = llm.chat_with_tools(
+                messages=messages, system=system, tools=TOOL_SCHEMAS,
+            )
+        except Exception as exc:  # noqa: BLE001
+            ui.error(iteration, f"LLM call failed: {exc}")
+            break
+
+        # Echo what the model said into the UI / log.
+        ui.llm(iteration, turn.text or "(no text)", {
+            "stop_reason": turn.stop_reason,
+            "tool_calls": [
+                {"name": tc.name, "input": tc.input} for tc in turn.tool_calls
+            ],
+        })
+
+        # Always carry the assistant turn forward verbatim — tool_use
+        # blocks must round-trip exactly so the matching tool_result IDs
+        # line up.
+        messages.append({"role": "assistant", "content": turn.raw_content})
+
+        if turn.stop_reason == "end_turn":
+            final_answer = turn.text or "(no text in final turn)"
+            ui.final(iteration, final_answer)
+            break
+
+        if turn.stop_reason != "tool_use":
+            ui.error(iteration, f"Unexpected stop_reason: {turn.stop_reason}")
+            break
+
+        # Dispatch every tool_use block from this turn (Claude can fire
+        # several in a single response).
+        tool_result_blocks: list[dict] = []
+        for tc in turn.tool_calls:
+            result_str = _dispatch_tool(tc.name, tc.input, iteration, ui)
+            tool_result_blocks.append({
+                "type": "tool_result",
+                "tool_use_id": tc.id,
+                "content": result_str,
+            })
+        messages.append({"role": "user", "content": tool_result_blocks})
+    else:
+        ui.error(max_iterations,
+                 "Max iterations reached without a final answer.")
+
+    rc = 0 if final_answer is not None else 2
+    return rc, messages
+
+
 def run_agent(
     user_query: str,
     max_iterations: int = 8,
     on_event: Callable[[dict], None] | None = None,
     render_terminal: bool = True,
-) -> int:
+    seed_messages: list[dict] | None = None,
+    return_messages: bool = False,
+) -> int | tuple[int, list[dict]]:
     """Execute the agent loop against one user query.
 
     This is the whole agent. The shape:
@@ -147,6 +257,22 @@ def run_agent(
         return 1
 
     system = _load_system_prompt()
+
+    # ── Native tool-use path (Anthropic) ─────────────────────────────────
+    # If the backend understands tool schemas natively, run a structured
+    # loop that round-trips tool_use / tool_result content blocks. The
+    # prompt-engineered path below is unchanged and still services Gemini.
+    if llm.supports_native_tools():
+        rc, final_messages = _run_native_tool_loop(
+            llm=llm, ui=ui, system=system, user_query=user_query,
+            max_iterations=max_iterations, seed_messages=seed_messages,
+        )
+        saved_to = ui.save()
+        if saved_to is not None:
+            ui.system(f"Full reasoning chain saved to {saved_to}")
+        if return_messages:
+            return rc, final_messages
+        return rc
 
     # `messages` accumulates the full conversation. On each iteration we
     # append the assistant's raw response + the tool result (two entries).
