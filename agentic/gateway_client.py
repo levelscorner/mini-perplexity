@@ -1,75 +1,62 @@
-"""Thin client to the PROVIDED LLM gateway V3 (runs at http://localhost:8101).
+"""Client to the provided LLM gateway.
 
-The gateway V3 zip from class ships its own `client.py`. The cleanest thing is
-to import and use THAT. This module is a small adapter exposing the three call
-shapes the four roles need, so the rest of the agent doesn't care about the
-wire format.
+Aligned to the **V2** API (Session 5) you actually have on disk:
+  - port 8100, endpoint POST /v1/chat
+  - `system` is its own field (string or [{text,cache}]); messages are user/assistant/tool
+  - response is top-level: {text, tool_calls:[{id,name,arguments,provider_meta}], parsed, ...}
+  - provider shortcuts: "g"=gemini, "gr"=groq, "n"=nvidia, "c"=cerebras, "o"=openrouter, ...
+  - structured output via response_format -> response["parsed"]
+  - native tool use via tools=[{name,description,input_schema}] + tool_choice
+  - NO `auto_route` (that is a V3 addition). On V2 we route by explicit `provider`
+    (e.g. provider="g" pins Perception/Memory to Gemini) + the gateway's own failover.
 
-⚠️ ALIGN ME: confirm endpoint paths + request/response field names against the
-gateway V3 README before relying on this. The method *shapes* are what matter;
-the JSON keys below are best-effort and may need a one-line tweak each.
-
-Key V3 features used:
-  - auto_route="perception"|"memory"|"decision"  -> router pool picks a tier
-  - provider="g"                                  -> override router, force Gemini
-  - tools=[...] + tool_choice                     -> native tool use
-  - response_format={"type":"json_schema",...}    -> structured output
-  - temperature=1                                 -> free models misbehave otherwise
+For the Session-6 V3 gateway: set GATEWAY_URL=http://localhost:8101 and
+GATEWAY_AUTO_ROUTE=1 so the router pool is used. Everything else is the same shape.
 """
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 import httpx
 
-GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:8101")
-DEFAULT_TEMPERATURE = 1.0  # free-tier models degrade / loop at temperature 0
+# Free-tier single-provider setups hit transient 429/503 (no other provider to fail over
+# to). Retry with backoff absorbs those — agents need retry/fallback by design.
+RETRY_STATUSES = {429, 502, 503}
+MAX_RETRIES = 4
+
+GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:8101")  # V3 (S6); V2 = :8100
+SEND_AUTO_ROUTE = os.getenv("GATEWAY_AUTO_ROUTE", "1") == "1"     # V3 router pool (opt-in; ignored by V2)
+DEFAULT_TEMPERATURE = 1.0  # free-tier models degrade / loop at low temperature
 
 
 class Gateway:
-    def __init__(self, base_url: str = GATEWAY_URL, timeout: float = 120.0):
+    def __init__(self, base_url: str = GATEWAY_URL, timeout: float = 600.0):
         self.base_url = base_url.rstrip("/")
         self._client = httpx.Client(timeout=timeout)
 
-    # ---- 1. plain chat (Memory classify, simple Decision answers) ----------
+    # ---- 1. plain chat -----------------------------------------------------
     def chat(self, *, system: str, user: str,
              auto_route: str | None = None, provider: str | None = None,
              temperature: float = DEFAULT_TEMPERATURE) -> str:
-        body: dict[str, Any] = {
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "temperature": temperature,
-        }
-        if auto_route:
-            body["auto_route"] = auto_route
-        if provider:
-            body["provider"] = provider
-        data = self._post("/v1/chat/completions", body)
-        return _first_text(data)
+        body: dict[str, Any] = {"system": system, "prompt": user, "temperature": temperature}
+        self._route(body, auto_route, provider)
+        return self._post(body).get("text") or ""
 
     # ---- 2. native tool use (Decision) -------------------------------------
     def chat_with_tools(self, *, system: str, messages: list[dict],
                         tools: list[dict], auto_route: str | None = "decision",
                         provider: str | None = None,
                         temperature: float = DEFAULT_TEMPERATURE) -> dict:
-        """Return {"text": str|None, "tool_calls": [{"name","arguments"}], "raw": data}."""
-        body: dict[str, Any] = {
-            "messages": [{"role": "system", "content": system}] + messages,
-            "tools": tools,
-            "tool_choice": "auto",
-            "temperature": temperature,
-        }
-        if auto_route:
-            body["auto_route"] = auto_route
-        if provider:
-            body["provider"] = provider
-        data = self._post("/v1/chat/completions", body)
+        body: dict[str, Any] = {"system": system, "messages": messages, "tools": tools,
+                                "tool_choice": "auto", "temperature": temperature}
+        self._route(body, auto_route, provider)
+        data = self._post(body)
         return {
-            "text": _first_text(data),
-            "tool_calls": _tool_calls(data),
+            "text": data.get("text") or None,
+            "tool_calls": [{"name": tc["name"], "arguments": tc.get("arguments") or {}}
+                           for tc in (data.get("tool_calls") or [])],
             "raw": data,
         }
 
@@ -78,55 +65,42 @@ class Gateway:
                    schema_name: str = "Output",
                    auto_route: str | None = None, provider: str | None = "g",
                    temperature: float = DEFAULT_TEMPERATURE) -> dict:
-        """Return the parsed dict validated by the gateway against `schema`."""
         body: dict[str, Any] = {
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "response_format": {
-                "type": "json_schema", "name": schema_name,
-                "schema": schema, "strict": True,
-            },
-            "temperature": temperature,
+            "system": system, "prompt": user, "temperature": temperature,
+            "response_format": {"type": "json_schema", "schema": schema,
+                                "name": schema_name, "strict": True},
         }
-        if auto_route:
+        self._route(body, auto_route, provider)
+        data = self._post(body)
+        parsed = data.get("parsed")
+        if parsed is None:
+            # V2 returns parsed=None (usually with 503) on schema-validation failure;
+            # fall back to parsing the text if the provider returned raw JSON.
+            import json
+            parsed = json.loads(data.get("text") or "{}")
+        return parsed
+
+    # ---- routing + transport ----------------------------------------------
+    def _route(self, body: dict, auto_route: str | None, provider: str | None) -> None:
+        # AGENT_PROVIDER is the one knob to flip the whole agent onto a single
+        # strong model (e.g. "openai", "anthropic", "g") — overrides per-call hints.
+        forced = os.getenv("AGENT_PROVIDER")
+        prov = forced or provider
+        if prov:
+            body["provider"] = prov
+        # auto_route only matters when no explicit/forced provider is set (explicit
+        # provider bypasses the router anyway); V2 ignores it.
+        if auto_route and SEND_AUTO_ROUTE and not prov:
             body["auto_route"] = auto_route
-        if provider:
-            body["provider"] = provider
-        data = self._post("/v1/chat/completions", body)
-        # gateway returns a validated parsed dict; fall back to parsing the text
-        if isinstance(data, dict) and "parsed" in data:
-            return data["parsed"]
-        import json
-        return json.loads(_first_text(data))
 
-    # ---- transport ---------------------------------------------------------
-    def _post(self, path: str, body: dict) -> dict:
-        r = self._client.post(self.base_url + path, json=body)
-        r.raise_for_status()
+    def _post(self, body: dict) -> dict:
+        last: httpx.HTTPStatusError | None = None
+        for attempt in range(MAX_RETRIES):
+            r = self._client.post(self.base_url + "/v1/chat", json=body)
+            if r.status_code in RETRY_STATUSES and attempt < MAX_RETRIES - 1:
+                time.sleep(2 ** attempt)   # 1, 2, 4s backoff for transient rate limits
+                continue
+            r.raise_for_status()
+            return r.json()
+        r.raise_for_status()  # final attempt's status
         return r.json()
-
-
-# --- response shape helpers (OpenAI-style; tweak if the gateway differs) ----
-def _first_text(data: dict) -> str | None:
-    try:
-        msg = data["choices"][0]["message"]
-        return msg.get("content")
-    except (KeyError, IndexError, TypeError):
-        return data.get("content") if isinstance(data, dict) else None
-
-
-def _tool_calls(data: dict) -> list[dict]:
-    out: list[dict] = []
-    try:
-        for tc in data["choices"][0]["message"].get("tool_calls") or []:
-            fn = tc.get("function", tc)
-            args = fn.get("arguments", {})
-            if isinstance(args, str):
-                import json
-                args = json.loads(args or "{}")
-            out.append({"name": fn.get("name"), "arguments": args})
-    except (KeyError, IndexError, TypeError):
-        pass
-    return out

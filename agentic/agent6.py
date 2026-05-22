@@ -47,6 +47,7 @@ async def run(query: str) -> str:
         tools = mcp_tools_for_decision(await load_tools(session))
 
         for it in range(1, MAX_ITERATIONS + 1):
+          try:
             hits = memory.read(query, history)
             obs = perception.observe(gateway, query, hits, history, prior_goals, run_id)
             prior_goals = obs.goals
@@ -84,6 +85,11 @@ async def run(query: str) -> str:
                 "tool": out.tool_call.name, "arguments": out.tool_call.arguments,
                 "result_descriptor": result_text[:300], "artifact_id": art_id,
             })
+          except Exception as exc:
+            # A gateway/tool error in one iteration shouldn't crash the whole run.
+            print(f"  [iter {it} error] {type(exc).__name__}: {str(exc)[:160]}")
+            history.append({"iter": it, "kind": "error", "text": f"{type(exc).__name__}: {exc}"})
+            break
 
         # OPTIONAL 3rd LLM call: end-of-run consolidation into durable memory.
         # (left to you — see memory.remember / a dedicated memory-writer prompt)

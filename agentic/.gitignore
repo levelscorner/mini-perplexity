@@ -1,5 +1,7 @@
 # runtime state — must be cleanable between attempts
 state/
+sandbox/
+usage.json
 
 # secrets
 .env
@@ -10,6 +12,9 @@ __pycache__/
 .venv/
 .uv/
 
-# provided code dropped in locally (keep out of the agent's own history if you prefer)
-# mcp_server.py
-# llm_gatewayV3/
+# PROVIDED course code — dropped in locally, NOT redistributed here.
+# Get these from the Session 6 lesson; place mcp_server.py next to this file and
+# run the gateway from its own folder.
+mcp_server.py
+llm_gatewayV3/
+llm_gatewayV2/

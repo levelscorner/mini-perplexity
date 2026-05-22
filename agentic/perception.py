@@ -88,20 +88,26 @@ You are given:
 Follow these obligations exactly:
 
 1. DECOMPOSE. If PRIOR GOALS is empty, split the QUERY into one or more bounded goals. Each goal
-   is a short imperative sentence a single worker could finish in one step given the right
-   information (e.g. "Fetch the Claude Shannon Wikipedia page"; "Extract his birth date, death
-   date and three contributions"). Use the fewest goals that fully cover the request. If PRIOR
-   GOALS is non-empty, KEEP the same goals, wording, and order - never add, drop, reorder, or
-   reword them.
+   is a short imperative sentence a single worker could finish in ONE step (one tool call or one
+   substantive answer) given the right information (e.g. "Fetch the Claude Shannon Wikipedia
+   page"; "Extract his birth date, death date and three contributions"). Use the fewest goals
+   that fully cover the request. If PRIOR GOALS is non-empty, KEEP the same goals, wording, and
+   order - never add, drop, reorder, or reword them.
+   DO NOT create a goal for merely remembering / storing / noting a fact the user stated
+   ("remember my birthday", "note that ...") — durable facts are captured automatically by the
+   memory layer and need no goal or tool. Only make goals for work that needs a tool call or a
+   substantive answer. A goal must be completable by some available tool or by answering; never
+   emit a goal nothing can satisfy.
 
 2. MARK DONE. For each goal, read HISTORY and set done=true the moment HISTORY contains an action
    or answer that genuinely satisfies it (a tool returned the needed result, or a substantive
    answer was produced - not merely attempted). A goal that is done stays done forever.
 
-3. ATTACH (only for the FIRST goal whose done is false). Decide whether that goal needs the raw
-   bytes of a previously fetched artifact. If yes, set its "artifact_index" to the integer index
-   of the relevant artifact-bearing MEMORY HIT (e.g. 0); otherwise null. Never invent an index
-   that is not shown. Only the first unfinished goal may carry an artifact_index; all others null.
+3. ATTACH. Every goal must include "artifact_index". For the FIRST goal whose done is false,
+   decide whether it needs the raw bytes of a previously fetched artifact: if yes, set
+   "artifact_index" to the integer index of the relevant artifact-bearing MEMORY HIT (e.g. 0).
+   In ALL other cases (no artifact needed, goal already done, or not the first unfinished goal)
+   set "artifact_index" to -1. Never invent an index that is not shown.
 
 4. ORDER. Emit goals in the same order every iteration - identity is positional.
 
@@ -109,6 +115,9 @@ Output ONLY the JSON required by the schema: {"goals":[{"text","done","artifact_
 No prose.
 """
 
+# NOTE: Gemini structured-output rejects union types (["integer","null"]). Use a plain
+# integer with a -1 sentinel for "no artifact", and make every field required (Gemini
+# strict mode wants all properties present).
 _OBSERVE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -119,9 +128,9 @@ _OBSERVE_SCHEMA = {
                 "properties": {
                     "text": {"type": "string"},
                     "done": {"type": "boolean"},
-                    "artifact_index": {"type": ["integer", "null"]},
+                    "artifact_index": {"type": "integer"},  # -1 = no artifact
                 },
-                "required": ["text", "done"],
+                "required": ["text", "done", "artifact_index"],
             },
         }
     },

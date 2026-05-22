@@ -35,14 +35,42 @@ wired by typed Pydantic contracts, running on the provided **MCP server** (tools
 All three role prompts are **drafted and wired** (no stubs; everything compiles + smoke-tests).
 They are first drafts — read them, make them yours, tune against the four queries.
 
-### Wiring is end-to-end tested
+### Tested — wiring (fakes) AND a real run
 
-`_e2e_smoke.py` drives the **real** loop, memory (keyword search + JSON persistence), artifact
-store, and attach gating against a fake gateway + fake MCP session with scripted responses —
-all four queries, **10/10 assertions green** (`uv run python _e2e_smoke.py`). This proves the
-*architecture/plumbing*; it does **not** judge prompt quality (only a real LLM can). For the
-graded "terminal output" deliverable you must still run against the **provided** gateway V3 +
-`mcp_server.py` with a real `TAVILY_API_KEY`.
+**Fakes:** `_e2e_smoke.py` drives the real loop/memory/artifacts/attach against scripted
+gateway+MCP — all four queries, **10/10 green** (`uv run python _e2e_smoke.py`).
+
+**Real run (2026-05-22, V3 gateway :8101 + provided 9-tool `mcp_server.py`):**
+- gateway_client (V3 wire-compatible), mcp_client (stdio), the loop, structured output, and
+  `memory.remember` classify all work against real infra.
+- **Strong model via the gateway:** added native `openai` + `anthropic` providers to the
+  gateway's `providers.py` (+ `LIMITS`/`SHORTCUTS` in `router.py`); set `AGENT_PROVIDER=openai`
+  to route every agent call to **GPT-4o**. (Claude via the OpenAI-compat endpoint didn't work —
+  it needs the native Messages API; GPT-4o is the working path.)
+- **Query C passes fully end-to-end on GPT-4o:** Run 1 — Perception decomposes into 2 reminder
+  goals, **Decision actually calls `create_file`** (writes `sandbox/moms_birthday_reminder_*.txt`),
+  fact persisted to `state/memory.json`. Run 2 (fresh process, same state) — **reads the fact
+  back and answers "May 15, 2026" in 2 iterations, no re-ask.** No crashes.
+- **Query A passes fully end-to-end on GPT-4o** (3 iters): `fetch_url` → 258 KB artifact →
+  Perception attaches it → Decision extracts the correct answer (born Apr 30 1916, died Feb 24
+  2001, + 3 contributions). Web tools wired: **Tavily** (`web_search`, key in `.env`) +
+  **crawl4ai** (`fetch_url`, chromium installed via `playwright install chromium`).
+  Fix: attached artifact bytes are **capped to 16 KB** in `decision.py` — the raw 254 KB blew
+  past the gateway's HUGE-tier ceiling (>~8000 tokens → 503); the page top holds the answer.
+- Fixes made during testing: Perception `artifact_index` `["integer","null"]`→plain `integer`+`-1`
+  (Gemini rejects union types, was a 502); 429/502/503 retry-backoff in `gateway_client`;
+  Perception no longer emits unsatisfiable "remember the fact" goals (was an infinite loop);
+  agent6 wraps each iteration in try/except so a transient gateway error ends the run gracefully
+  instead of crashing.
+- Weak-model contrast (kept for the learning): on `gemini-2.5-flash` Decision *narrated*
+  ("a reminder has been created") instead of acting — the strong model fixed that. This is the
+  point of the assignment's weak-model design. Prompts are still first drafts: review + PoP.
+
+**Setup used for the real run** (provided substrate lives in `~/Downloads/agentic/`):
+`cp ~/Downloads/agentic/7c50da52-*.py mcp_server.py` · `uv add ddgs` · gateway:
+`cd ~/Downloads/agentic/llm_gatewayV3 && ./run.sh` (reads `../.env` for keys) · run:
+`MCP_SERVER_CMD=".venv/bin/python mcp_server.py" GATEWAY_URL=http://localhost:8101 .venv/bin/python agent6.py "<query>"`.
+For Queries A/B/D also `uv add crawl4ai tavily` and set `TAVILY_API_KEY`.
 
 ## What's left for you (the graded thinking)
 

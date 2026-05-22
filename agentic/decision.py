@@ -29,12 +29,19 @@ def next_step(gateway: Gateway, goal: Goal, hits: list[MemoryItem],
               attached: list[tuple[str, bytes]], history: list[dict],
               mcp_tools: list[dict]) -> DecisionOutput:
     hit_text = "\n".join(f"- {h.descriptor}" for h in hits) or "(none)"
+    # Cap each attached artifact so the call stays under the gateway's HUGE-tier
+    # ceiling (>~8000 tokens -> 503). The lead/infobox/top of a fetched page holds
+    # the answer for extraction goals; a real system would chunk/summarise instead.
+    # (S6 lesson flags a Summarizer Agent for the full-document case.)
+    MAX_ATTACH_CHARS = 16000
     attached_text = ""
     for aid, blob in attached:
         try:
             body = blob.decode("utf-8", errors="replace")
         except Exception:
             body = "<binary>"
+        if len(body) > MAX_ATTACH_CHARS:
+            body = body[:MAX_ATTACH_CHARS] + f"\n…[truncated, {len(body)} bytes total]"
         attached_text += f"\n--- {aid} ---\n{body}\n"
 
     user = (
@@ -70,6 +77,13 @@ context, and a list of available tools. Do ONE of two things and nothing else:
 (b) CALL ONE TOOL. Otherwise call EXACTLY ONE tool to make progress. Never call more than one
     tool. Never both answer and call a tool in the same turn. Keep arguments minimal and valid
     for that tool's schema.
+
+If the goal requires PRODUCING or PERSISTING something in the world — creating a reminder, a
+note, a record, saving a result, writing or editing a file — you MUST achieve it with a tool.
+Do NOT reply that you "cannot" do it or tell the user to use another app. When no tool matches
+the wording exactly, use the closest available tool to produce the effect: e.g. a "calendar
+reminder" or "note" becomes a real file via `create_file` (write the reminder text to a sensibly
+named path like `reminders/<thing>.txt`). Answering instead of acting on such a goal is wrong.
 
 Artifacts: any string beginning with "art:" is an internal artifact handle - it is NOT a file
 path or URL. NEVER put an "art:" value in a tool argument. When a goal needs an artifact's
