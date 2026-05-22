@@ -1,0 +1,15 @@
+# runtime state — must be cleanable between attempts
+state/
+
+# secrets
+.env
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.uv/
+
+# provided code dropped in locally (keep out of the agent's own history if you prefer)
+# mcp_server.py
+# llm_gatewayV3/

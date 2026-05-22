@@ -1,0 +1,18 @@
+[project]
+name = "s06-agentic-architecture"
+version = "0.1.0"
+description = "EAG V3 Session 6 — four cognitive roles (Memory/Perception/Decision/Action) on MCP + gateway V3"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "httpx>=0.27",
+    "mcp>=1.2",
+]
+
+# The PROVIDED mcp_server.py additionally needs: ddgs, crawl4ai, tavily
+# Install those alongside, e.g.:  uv add ddgs crawl4ai tavily
+# The PROVIDED llm_gatewayV3 ships its own deps — install per its README and
+# run it on :8101 before launching the agent.
+
+[tool.uv]
+package = false
