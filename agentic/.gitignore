@@ -1,6 +1,8 @@
-# runtime state — must be cleanable between attempts
-state/
-sandbox/
+# runtime state — cleanable between attempts (`rm -rf state sandbox`).
+# Heavy artifact blobs stay out of git; a representative state/memory.json + the
+# sandbox reminder files from the Query-C run are committed as durable-memory
+# evidence (assignment deliverable: "state/ visible").
+state/artifacts/
 usage.json
 
 # secrets
