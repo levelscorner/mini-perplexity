@@ -202,7 +202,7 @@ tasks for independent concurrent work; handle cancellations gracefully.
 ```
 
 ## Deliverables (1000 pts)
-- ✅ GitHub repo (this folder, `state/` visible) [200]
+- ✅ GitHub repo (code + README documenting how to run each query; **`state/` excluded by `.gitignore`** per the rubric) [200]
 - ✅ This README with the **actual terminal output** of all 4 queries from a clean state [200] — see [Actual run output](#actual-run-output-clean-state)
 - ⬜ YouTube demo of all 4 end-to-end [400] — *record against this same setup*
 - ✅ Perception prompt (`perception.py` → `PERCEPTION_SYSTEM`) + PoP JSON (`pop/perception.json`, 8/8) [100]
