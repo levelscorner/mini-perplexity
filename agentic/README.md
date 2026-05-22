@@ -47,7 +47,7 @@ gateway+MCP — all four queries, **10/10 green** (`uv run python _e2e_smoke.py`
 |---|-------|--------|-------------------|
 | A | Shannon Wikipedia → birth/death + 3 contributions | born Apr 30 1916, died Feb 24 2001; Mathematical Theory of Communication, Shannon entropy, Sampling Theorem | **3** (≤6) |
 | B | Tokyo family activities + Saturday weather → pick one | 3 activities, fetched `wttr.in/Tokyo` (16 °C cloudy), recommended the **indoor** Samurai/Ninja museum | **6** (≤12) |
-| C1 | "mom's birthday 15 May 2026, remind me…" | fact persisted to `state/memory.json`; **two** reminder files created in `sandbox/` | **4** (≤8) |
+| C1 | "mom's birthday 15 May 2026, remind me…" | fact persisted to `state/memory.json`; **two** reminder files created in `sandbox/` | **3** (≤8) |
 | C2 | "When is my mom's birthday?" (fresh process, same state) | recalls **"May 15, 2026"** from durable memory, no re-ask | **2** (≤4) |
 | D | asyncio best practices → read top 3 → agreed advice | 7 agreed practices synthesised across the search results | **4** (≤14) |
 
@@ -179,17 +179,21 @@ Recommended (weather-grounded): the Samurai & Ninja museum in Asakusa — it's i
 the cloudy 16 °C Saturday, and engaging for kids.
 ```
 
-### Query C run 1 — remember + create reminders (4 iters)
+### Query C run 1 — remember + create reminders (3 iters)
 ```
 ─── iter 1 ───
   [open] Create a reminder two weeks before mom's birthday (2026-05-01)
   [open] Create a reminder on mom's birthday (2026-05-15)
-─── iter 2 ───  [tool] create_file({'path': 'moms_birthday_reminder_2weeks.txt', …}) -> ok
-─── iter 3 ───  [tool] create_file({'path': 'moms_birthday_reminder_onday.txt', …}) -> ok
-─── iter 4 ───  [done] … two weeks before  [done] … on the day
+  [tool] create_file({'path': 'moms_birthday_reminder_2weeks.txt', …}) -> ok
+─── iter 2 ───  [tool] create_file({'path': 'moms_birthday_reminder_onday.txt', …}) -> ok
+─── iter 3 ───  [done] … two weeks before  [done] … on the day
+=== FINAL ===
+Done — completed 2 action(s): create_file(moms_birthday_reminder_2weeks.txt); create_file(moms_birthday_reminder_onday.txt).
 # state/memory.json → fact | mom's birthday is 2026-05-15
 # sandbox/ → moms_birthday_reminder_2weeks.txt, moms_birthday_reminder_onday.txt
 ```
+(A create-only query produces no "answer" events, so the loop summarises the actions it
+completed instead of reporting a misleading "no answer".)
 
 ### Query C run 2 — recall across a fresh process, same state (2 iters)
 ```

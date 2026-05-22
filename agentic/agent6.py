@@ -116,11 +116,35 @@ async def run(query: str, on_event: "Callable[[dict], None] | None" = None) -> s
         # OPTIONAL 3rd LLM call: end-of-run consolidation into durable memory.
         # (left to you — see memory.remember / a dedicated memory-writer prompt)
 
-    answers = [h["text"] for h in history if h.get("kind") == "answer"]
-    final = "\n".join(answers) if answers else "(no answer produced within iteration budget)"
+    final = _final_answer(history)
     print("\n=== FINAL ===\n" + final)
     emit({"kind": "final", "iter": 0, "text": final})
     return final
+
+
+def _final_answer(history: list[dict]) -> str:
+    """Build the run's final text. Most queries end on one or more answers; a
+    create-only query (e.g. 'remind me…') ends on actions with no answer, so we
+    summarise what was done instead of reporting a misleading 'no answer'. If the
+    run broke on an error, surface that rather than a silent blank.
+    """
+    answers = [h["text"] for h in history if h.get("kind") == "answer"]
+    if answers:
+        return "\n".join(answers)
+
+    actions = [h for h in history if h.get("kind") == "action"]
+    if actions:
+        def brief(a: dict) -> str:
+            args = a.get("arguments") or {}
+            hint = args.get("path") or args.get("url") or args.get("query") or ""
+            return f"{a['tool']}({hint})" if hint else a["tool"]
+        return (f"Done — completed {len(actions)} action(s): "
+                + "; ".join(brief(a) for a in actions) + ".")
+
+    errors = [h for h in history if h.get("kind") == "error"]
+    if errors:
+        return f"Run ended on a transient error: {errors[-1]['text']}  (retry the query)."
+    return "(no answer produced within iteration budget)"
 
 
 def main() -> int:
