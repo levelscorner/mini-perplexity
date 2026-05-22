@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import uuid
+from collections.abc import Callable
 
 import action
 import perception
@@ -27,7 +28,14 @@ from memory import Memory
 MAX_ITERATIONS = 12
 
 
-async def run(query: str) -> str:
+async def run(query: str, on_event: "Callable[[dict], None] | None" = None) -> str:
+    """Run the four-role loop. If `on_event` is given, structured events are
+    streamed to it (one dict per step) for the web UI; CLI printing is unchanged.
+    """
+    def emit(event: dict) -> None:
+        if on_event:
+            on_event(event)
+
     gateway = Gateway()
     artifacts = ArtifactStore(state_dir="state", persist=True)
     memory = Memory(gateway, path="state/memory.json")
@@ -35,11 +43,15 @@ async def run(query: str) -> str:
     run_id = uuid.uuid4().hex[:8]
     history: list[dict] = []
     prior_goals: list = []
+    emit({"kind": "user", "iter": 0, "text": query})
 
     # Durable-memory contract: classify the query so any fact in it survives
     # into future runs (this is what makes Query C's run 2 work).
     try:
-        memory.remember(query, source="user_query", run_id=run_id)
+        stored = memory.remember(query, source="user_query", run_id=run_id)
+        if stored is not None:
+            emit({"kind": "memory", "iter": 0,
+                  "text": f"stored {stored.kind}: {stored.descriptor}"})
     except Exception as exc:  # a durable-write hiccup must not kill the run
         print(f"[memory.remember skipped: {type(exc).__name__}: {exc}]")
 
@@ -57,6 +69,10 @@ async def run(query: str) -> str:
                 mark = "done" if g.done else "open"
                 print(f"  [{mark}] {g.text}"
                       + (f"  attach={g.attach_artifact_id}" if g.attach_artifact_id else ""))
+            emit({"kind": "perception", "iter": it, "all_done": obs.all_done,
+                  "memory_hits": [h.descriptor for h in hits],
+                  "goals": [{"text": g.text, "done": g.done,
+                             "attach": g.attach_artifact_id} for g in obs.goals]})
 
             if obs.all_done:
                 break
@@ -72,13 +88,18 @@ async def run(query: str) -> str:
 
             if out.is_answer:
                 print(f"  [answer] {out.answer[:160]}")
+                emit({"kind": "answer", "iter": it, "goal": goal.text, "text": out.answer})
                 history.append({"iter": it, "kind": "answer",
                                 "goal_id": goal.id, "text": out.answer})
                 continue
 
+            emit({"kind": "tool_call", "iter": it, "goal": goal.text,
+                  "tool": out.tool_call.name, "arguments": out.tool_call.arguments})
             result_text, art_id = await action.execute(session, out.tool_call, artifacts)
             print(f"  [tool] {out.tool_call.name}({out.tool_call.arguments}) -> "
                   f"{result_text[:120]}")
+            emit({"kind": "tool_result", "iter": it, "tool": out.tool_call.name,
+                  "result": result_text[:600], "artifact_id": art_id})
             memory.record_outcome(out.tool_call, result_text, art_id, run_id, goal.id)
             history.append({
                 "iter": it, "kind": "action", "goal_id": goal.id,
@@ -88,6 +109,7 @@ async def run(query: str) -> str:
           except Exception as exc:
             # A gateway/tool error in one iteration shouldn't crash the whole run.
             print(f"  [iter {it} error] {type(exc).__name__}: {str(exc)[:160]}")
+            emit({"kind": "error", "iter": it, "text": f"{type(exc).__name__}: {exc}"})
             history.append({"iter": it, "kind": "error", "text": f"{type(exc).__name__}: {exc}"})
             break
 
@@ -97,6 +119,7 @@ async def run(query: str) -> str:
     answers = [h["text"] for h in history if h.get("kind") == "answer"]
     final = "\n".join(answers) if answers else "(no answer produced within iteration budget)"
     print("\n=== FINAL ===\n" + final)
+    emit({"kind": "final", "iter": 0, "text": final})
     return final
 
 

@@ -108,6 +108,23 @@ uv run python agent6.py "Fetch https://en.wikipedia.org/wiki/Claude_Shannon and 
 
 `state/` is auto-created and **cleanable between attempts** (`rm -rf state/`).
 
+### Web UI (optional) — the same loop, in the browser
+
+`webapp/` is a thin presentation layer over the **same** `agent6.run` loop (same gateway,
+same MCP stdio — no logic duplicated). `agent6.run` takes an optional `on_event` callback;
+the FastAPI server streams those events over SSE and the single-page UI renders each
+iteration as Memory → Perception → Decision → Action cards (goal checklists, tool calls,
+results, final answer). CLI behaviour is unchanged when `on_event` is omitted.
+
+```bash
+uv add fastapi uvicorn        # one-time
+# gateway must be up on :8101, then from agentic/:
+env -u ANTHROPIC_API_KEY -u ANTHROPIC_BASE_URL MCP_SERVER_CMD=".venv/bin/python mcp_server.py" \
+    GATEWAY_URL="http://localhost:8101" AGENT_PROVIDER="openai" \
+    .venv/bin/python -m uvicorn webapp.server:app --port 8000
+# open http://127.0.0.1:8000
+```
+
 ## The four target queries (the assignment)
 
 | # | Query | Tests | ~iters |

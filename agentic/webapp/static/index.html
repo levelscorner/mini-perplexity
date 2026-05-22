@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>S6 Agent · Memory · Perception · Decision · Action</title>
+<style>
+  :root {
+    --bg: oklch(17% 0.02 275);
+    --bg-2: oklch(21% 0.025 275);
+    --surface: oklch(25% 0.03 275);
+    --surface-2: oklch(29% 0.035 275);
+    --line: oklch(38% 0.03 275);
+    --text: oklch(95% 0.01 275);
+    --muted: oklch(72% 0.02 275);
+    --faint: oklch(58% 0.02 275);
+
+    --memory: oklch(80% 0.13 75);     /* amber  */
+    --perception: oklch(72% 0.16 300);/* violet */
+    --decision: oklch(78% 0.13 220);  /* cyan   */
+    --action: oklch(78% 0.15 150);    /* green  */
+    --danger: oklch(70% 0.2 25);
+
+    --r: 14px;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    font-synthesis: none;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 700px at 85% -10%, oklch(28% 0.05 300 / 0.5), transparent 60%),
+      radial-gradient(900px 600px at -5% 110%, oklch(28% 0.05 220 / 0.45), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, .mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; }
+
+  header.topbar {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 0.9rem 1.4rem;
+    border-bottom: 1px solid var(--line);
+    background: oklch(19% 0.02 275 / 0.7);
+    backdrop-filter: blur(10px);
+    position: sticky; top: 0; z-index: 5;
+  }
+  .brand { display: flex; align-items: baseline; gap: 0.6rem; }
+  .brand h1 { font-size: 1.02rem; margin: 0; letter-spacing: -0.01em; font-weight: 650; }
+  .brand .sub { font-size: 0.72rem; color: var(--faint); letter-spacing: 0.02em; }
+  .roles { display: flex; gap: 0.4rem; margin-left: 0.4rem; }
+  .role-pill {
+    font-size: 0.66rem; font-weight: 600; letter-spacing: 0.04em;
+    padding: 0.18rem 0.5rem; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted);
+    text-transform: uppercase;
+  }
+  .role-pill[data-r=M] { color: var(--memory); border-color: oklch(80% 0.13 75 / 0.4); }
+  .role-pill[data-r=P] { color: var(--perception); border-color: oklch(72% 0.16 300 / 0.4); }
+  .role-pill[data-r=D] { color: var(--decision); border-color: oklch(78% 0.13 220 / 0.4); }
+  .role-pill[data-r=A] { color: var(--action); border-color: oklch(78% 0.15 150 / 0.4); }
+  .spacer { flex: 1; }
+  .status {
+    font-size: 0.74rem; color: var(--muted);
+    display: flex; align-items: center; gap: 0.45rem;
+  }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--faint); box-shadow: 0 0 0 0 transparent;
+  }
+  .dot.run { background: var(--decision); animation: pulse 1.3s var(--ease) infinite; }
+  .dot.done { background: var(--action); }
+  .dot.err { background: var(--danger); }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 oklch(78% 0.13 220 / 0.6); }
+    100% { box-shadow: 0 0 0 9px transparent; }
+  }
+
+  main {
+    flex: 1; min-height: 0;
+    display: grid; grid-template-columns: minmax(320px, 0.9fr) 1.4fr;
+    gap: 1.1rem; padding: 1.1rem 1.4rem 0;
+  }
+  @media (max-width: 880px) { main { grid-template-columns: 1fr; } }
+
+  .pane { display: flex; flex-direction: column; min-height: 0; }
+  .pane > h2 {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--faint); margin: 0 0 0.6rem; font-weight: 650;
+  }
+  .scroll { overflow-y: auto; padding-right: 0.4rem; min-height: 0; flex: 1; }
+  .scroll::-webkit-scrollbar { width: 9px; }
+  .scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+
+  /* answer pane */
+  .answer-card {
+    background: linear-gradient(160deg, var(--surface), var(--bg-2));
+    border: 1px solid var(--line); border-radius: var(--r);
+    padding: 1.1rem 1.2rem; white-space: pre-wrap; line-height: 1.55;
+    font-size: 0.93rem; color: var(--text);
+  }
+  .answer-card.empty { color: var(--faint); font-style: italic; }
+  .qline {
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-left: 3px solid var(--perception);
+    border-radius: 10px; padding: 0.7rem 0.9rem; margin-bottom: 0.9rem;
+    font-size: 0.9rem; color: var(--text);
+  }
+  .qline .lbl { font-size: 0.66rem; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; display:block; margin-bottom: 0.2rem; }
+
+  /* iteration timeline */
+  .iter {
+    border: 1px solid var(--line); border-radius: var(--r);
+    background: oklch(22% 0.022 275 / 0.6);
+    margin-bottom: 0.85rem; overflow: hidden;
+    animation: rise 0.4s var(--ease) both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .iter-head {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.55rem 0.85rem; background: var(--surface);
+    border-bottom: 1px solid var(--line); font-size: 0.78rem;
+  }
+  .iter-head .n { font-weight: 700; color: var(--muted); }
+  .iter-body { padding: 0.7rem 0.85rem; display: flex; flex-direction: column; gap: 0.6rem; }
+
+  .row { display: flex; gap: 0.6rem; }
+  .role-tag {
+    flex: none; width: 1.55rem; height: 1.55rem; border-radius: 8px;
+    display: grid; place-items: center; font-size: 0.72rem; font-weight: 800;
+    border: 1px solid var(--line);
+  }
+  .role-tag.M { color: var(--memory); background: oklch(80% 0.13 75 / 0.12); }
+  .role-tag.P { color: var(--perception); background: oklch(72% 0.16 300 / 0.12); }
+  .role-tag.D { color: var(--decision); background: oklch(78% 0.13 220 / 0.12); }
+  .role-tag.A { color: var(--action); background: oklch(78% 0.15 150 / 0.12); }
+  .card-content { flex: 1; min-width: 0; }
+  .card-content .role-name { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); margin-bottom: 0.25rem; }
+
+  ul.goals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+  ul.goals li { display: flex; gap: 0.5rem; align-items: flex-start; font-size: 0.85rem; }
+  .check {
+    flex: none; width: 1.05rem; height: 1.05rem; border-radius: 5px; margin-top: 0.12rem;
+    border: 1.5px solid var(--faint); display: grid; place-items: center; font-size: 0.7rem;
+    transition: all 0.25s var(--ease);
+  }
+  .check.done { background: var(--action); border-color: var(--action); color: oklch(20% 0.03 150); }
+  li.done .gtext { color: var(--faint); text-decoration: line-through; text-decoration-color: oklch(60% 0.02 275 / 0.6); }
+  .attach { font-size: 0.66rem; color: var(--memory); border: 1px solid oklch(80% 0.13 75 / 0.35); border-radius: 6px; padding: 0 0.32rem; margin-left: 0.3rem; }
+
+  .toolcall, .toolresult, .answer-inline, .errbox {
+    font-size: 0.83rem; line-height: 1.5; border-radius: 9px; padding: 0.55rem 0.7rem;
+  }
+  .toolcall { background: oklch(78% 0.13 220 / 0.08); border: 1px solid oklch(78% 0.13 220 / 0.25); }
+  .toolcall .tname { color: var(--decision); font-weight: 700; }
+  .toolresult { background: oklch(78% 0.15 150 / 0.07); border: 1px solid oklch(78% 0.15 150 / 0.22); color: var(--muted); white-space: pre-wrap; max-height: 8.5rem; overflow: auto; }
+  .answer-inline { background: oklch(78% 0.13 220 / 0.06); border: 1px solid var(--line); white-space: pre-wrap; }
+  .errbox { background: oklch(70% 0.2 25 / 0.1); border: 1px solid oklch(70% 0.2 25 / 0.4); color: var(--danger); }
+  .argline { color: var(--faint); }
+  .pill-tiny { font-size: 0.62rem; color: var(--memory); }
+
+  .memchip {
+    display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.76rem;
+    background: oklch(80% 0.13 75 / 0.1); border: 1px solid oklch(80% 0.13 75 / 0.3);
+    color: var(--memory); border-radius: 999px; padding: 0.3rem 0.7rem; margin-bottom: 0.7rem;
+  }
+
+  footer.composer {
+    display: flex; gap: 0.7rem; padding: 1rem 1.4rem; align-items: center;
+    border-top: 1px solid var(--line); background: oklch(19% 0.02 275 / 0.7);
+    backdrop-filter: blur(10px); margin-top: 0.9rem;
+  }
+  .examples { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .ex {
+    font-size: 0.7rem; color: var(--muted); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 999px; padding: 0.32rem 0.7rem;
+    cursor: pointer; transition: border-color 0.2s var(--ease), color 0.2s var(--ease);
+  }
+  .ex:hover { color: var(--text); border-color: var(--perception); }
+  form#composer { display: flex; gap: 0.6rem; flex: 1; }
+  input#q {
+    flex: 1; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 11px; padding: 0.7rem 0.9rem; color: var(--text); font-size: 0.9rem;
+    transition: border-color 0.2s var(--ease);
+  }
+  input#q:focus { outline: none; border-color: var(--perception); }
+  button#send {
+    background: linear-gradient(135deg, var(--perception), var(--decision));
+    color: oklch(18% 0.02 275); font-weight: 700; border: none; border-radius: 11px;
+    padding: 0.7rem 1.3rem; cursor: pointer; font-size: 0.88rem;
+    transition: transform 0.15s var(--ease), opacity 0.2s var(--ease);
+  }
+  button#send:hover:not(:disabled) { transform: translateY(-1px); }
+  button#send:disabled { opacity: 0.5; cursor: default; }
+  .controls { display: flex; flex-direction: column; gap: 0.5rem; align-items: stretch; flex: 1; }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>S6 Agent</h1>
+      <span class="sub">the loop is the agent</span>
+    </div>
+    <div class="roles">
+      <span class="role-pill" data-r="M">Memory</span>
+      <span class="role-pill" data-r="P">Perception</span>
+      <span class="role-pill" data-r="D">Decision</span>
+      <span class="role-pill" data-r="A">Action</span>
+    </div>
+    <span class="spacer"></span>
+    <div class="status"><span class="dot" id="dot"></span><span id="status">idle</span></div>
+  </header>
+
+  <main>
+    <section class="pane">
+      <h2>Answer</h2>
+      <div class="scroll">
+        <div id="qline" class="qline" hidden><span class="lbl">Query</span><span id="qtext"></span></div>
+        <div id="answer" class="answer-card empty">Ask something below — the agent's final answer lands here.</div>
+      </div>
+    </section>
+
+    <section class="pane">
+      <h2>The loop · Memory → Perception → Decision → Action</h2>
+      <div class="scroll" id="trace"></div>
+    </section>
+  </main>
+
+  <footer class="composer">
+    <div class="controls">
+      <div class="examples" id="examples"></div>
+      <form id="composer">
+        <input id="q" type="text" placeholder="e.g. Fetch the Claude Shannon Wikipedia page and tell me his birth date, death date, and three contributions." required />
+        <button id="send" type="submit">Run</button>
+      </form>
+    </div>
+  </footer>
+
+<script>
+const EXAMPLES = [
+  "Fetch https://en.wikipedia.org/wiki/Claude_Shannon and tell me his birth date, death date, and three key contributions to information theory.",
+  "Suggest three family-friendly things to do in Tokyo this weekend, check Saturday's weather via wttr.in, and recommend one based on the forecast.",
+  "My mom's birthday is 15 May 2026. Remind me two weeks before and on the day.",
+  "When is my mom's birthday?",
+  "Search for 'Python asyncio best practices', read the top three results, and list the advice they agree on.",
+];
+const LABELS = ["Query A · fetch + extract", "Query B · multi-goal + weather", "Query C1 · remember", "Query C2 · recall", "Query D · synthesis"];
+
+const $ = (id) => document.getElementById(id);
+const trace = $("trace"), answerEl = $("answer"), dot = $("dot"), statusEl = $("status");
+const ROLE_NAME = { M: "Memory", P: "Perception", D: "Decision", A: "Action" };
+
+// build example chips
+const exWrap = $("examples");
+EXAMPLES.forEach((q, i) => {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "ex"; b.textContent = LABELS[i];
+  b.onclick = () => { $("q").value = q; };
+  exWrap.appendChild(b);
+});
+
+let iterBlocks = {}; // iter number -> body element
+
+function setStatus(text, cls) { statusEl.textContent = text; dot.className = "dot" + (cls ? " " + cls : ""); }
+
+function iterBody(n) {
+  if (iterBlocks[n]) return iterBlocks[n];
+  const block = document.createElement("div"); block.className = "iter";
+  const head = document.createElement("div"); head.className = "iter-head";
+  head.innerHTML = `<span class="n">iteration ${n}</span>`;
+  const body = document.createElement("div"); body.className = "iter-body";
+  block.appendChild(head); block.appendChild(body); trace.appendChild(block);
+  iterBlocks[n] = body;
+  trace.scrollTop = trace.scrollHeight;
+  return body;
+}
+
+function roleRow(role, innerHTML) {
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<div class="role-tag ${role}">${role}</div>`
+    + `<div class="card-content"><div class="role-name">${ROLE_NAME[role]}</div>${innerHTML}</div>`;
+  return row;
+}
+
+function esc(s) { return (s ?? "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+function handle(ev) {
+  if (ev.kind === "user") {
+    $("qline").hidden = false; $("qtext").textContent = ev.text;
+    answerEl.className = "answer-card empty"; answerEl.textContent = "Running the loop…";
+    return;
+  }
+  if (ev.kind === "memory") {
+    const chip = document.createElement("div"); chip.className = "memchip";
+    chip.innerHTML = `<span>🧠</span><span>${esc(ev.text)}</span>`;
+    trace.appendChild(chip); trace.scrollTop = trace.scrollHeight; return;
+  }
+  if (ev.kind === "perception") {
+    const body = iterBody(ev.iter);
+    let prev = body.querySelector(".row-perception"); if (prev) prev.remove();
+    const items = ev.goals.map(g =>
+      `<li class="${g.done ? "done" : ""}"><span class="check ${g.done ? "done" : ""}">${g.done ? "✓" : ""}</span>`
+      + `<span class="gtext">${esc(g.text)}${g.attach ? `<span class="attach">${esc(g.attach)}</span>` : ""}</span></li>`).join("");
+    const row = roleRow("P", `<ul class="goals">${items}</ul>`);
+    row.classList.add("row-perception");
+    body.prepend(row);
+    trace.scrollTop = trace.scrollHeight; return;
+  }
+  if (ev.kind === "tool_call") {
+    const body = iterBody(ev.iter);
+    const args = esc(JSON.stringify(ev.arguments));
+    body.appendChild(roleRow("D",
+      `<div class="toolcall mono"><span class="tname">${esc(ev.tool)}</span>(<span class="argline">${args}</span>)</div>`));
+    trace.scrollTop = trace.scrollHeight; return;
+  }
+  if (ev.kind === "tool_result") {
+    const body = iterBody(ev.iter);
+    const art = ev.artifact_id ? `<span class="pill-tiny">→ ${esc(ev.artifact_id)}</span> ` : "";
+    body.appendChild(roleRow("A", `${art}<div class="toolresult mono">${esc(ev.result)}</div>`));
+    trace.scrollTop = trace.scrollHeight; return;
+  }
+  if (ev.kind === "answer") {
+    const body = iterBody(ev.iter);
+    body.appendChild(roleRow("D", `<div class="answer-inline">${esc(ev.text)}</div>`));
+    trace.scrollTop = trace.scrollHeight; return;
+  }
+  if (ev.kind === "error") {
+    const body = iterBody(ev.iter || 1);
+    body.appendChild(roleRow("A", `<div class="errbox mono">${esc(ev.text)}</div>`));
+    setStatus("error", "err"); return;
+  }
+  if (ev.kind === "final") {
+    answerEl.className = "answer-card";
+    answerEl.textContent = ev.text || "(no answer produced)";
+    setStatus("done", "done"); return;
+  }
+}
+
+async function runQuery(query) {
+  // reset
+  trace.innerHTML = ""; iterBlocks = {};
+  $("send").disabled = true; setStatus("running", "run");
+  try {
+    const resp = await fetch("/api/run", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    });
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder(); let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const chunks = buf.split("\n\n"); buf = chunks.pop();
+      for (const c of chunks) {
+        const line = c.split("\n").find(l => l.startsWith("data: "));
+        if (line) handle(JSON.parse(line.slice(6)));
+      }
+    }
+    if (dot.className.indexOf("done") === -1 && dot.className.indexOf("err") === -1) setStatus("done", "done");
+  } catch (e) {
+    setStatus("connection error", "err");
+    answerEl.className = "answer-card"; answerEl.textContent = "Stream failed: " + e.message
+      + "\n\nIs the gateway up on :8101 and the server launched from agentic/?";
+  } finally {
+    $("send").disabled = false;
+  }
+}
+
+$("composer").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const q = $("q").value.trim();
+  if (q) runQuery(q);
+});
+</script>
+</body>
+</html>

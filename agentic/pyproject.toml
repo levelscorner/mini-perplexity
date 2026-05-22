@@ -10,6 +10,8 @@ dependencies = [
     "ddgs>=9.14.4",
     "tavily>=1.1.0",
     "crawl4ai>=0.8.6",
+    "fastapi>=0.136.1",
+    "uvicorn>=0.47.0",
 ]
 
 # The PROVIDED mcp_server.py additionally needs: ddgs, crawl4ai, tavily
