@@ -6,375 +6,347 @@
 <title>S6 Agent · Memory · Perception · Decision · Action</title>
 <style>
   :root {
-    --bg: oklch(17% 0.02 275);
-    --bg-2: oklch(21% 0.025 275);
-    --surface: oklch(25% 0.03 275);
-    --surface-2: oklch(29% 0.035 275);
-    --line: oklch(38% 0.03 275);
-    --text: oklch(95% 0.01 275);
-    --muted: oklch(72% 0.02 275);
-    --faint: oklch(58% 0.02 275);
+    /* surfaces — near-black with a cool cast, layered */
+    --bg:       oklch(15% 0.018 270);
+    --bg-glow1: oklch(30% 0.08 285 / 0.40);
+    --bg-glow2: oklch(30% 0.07 220 / 0.34);
+    --surface:  oklch(20% 0.022 270);
+    --surface-2:oklch(24% 0.026 270);
+    --raised:   oklch(27% 0.03 270);
+    --line:     oklch(33% 0.025 270);
+    --line-soft:oklch(28% 0.02 270 / 0.7);
 
-    --memory: oklch(80% 0.13 75);     /* amber  */
-    --perception: oklch(72% 0.16 300);/* violet */
-    --decision: oklch(78% 0.13 220);  /* cyan   */
-    --action: oklch(78% 0.15 150);    /* green  */
-    --danger: oklch(70% 0.2 25);
+    --text:  oklch(97% 0.008 270);
+    --muted: oklch(74% 0.018 270);
+    --faint: oklch(58% 0.02 270);
 
-    --r: 14px;
+    /* one accent per cognitive role */
+    --memory:     oklch(82% 0.135 78);   /* amber  */
+    --perception: oklch(74% 0.16 300);   /* violet */
+    --decision:   oklch(79% 0.13 222);   /* cyan   */
+    --action:     oklch(80% 0.15 152);   /* green  */
+    --danger:     oklch(70% 0.2 25);
+
+    --r-lg: 18px; --r: 13px; --r-sm: 9px;
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
     font-synthesis: none;
   }
   * { box-sizing: border-box; }
-  html, body { height: 100%; }
+  html, body { height: 100%; margin: 0; }
   body {
-    margin: 0;
+    font-family: var(--sans); color: var(--text);
     background:
-      radial-gradient(1200px 700px at 85% -10%, oklch(28% 0.05 300 / 0.5), transparent 60%),
-      radial-gradient(900px 600px at -5% 110%, oklch(28% 0.05 220 / 0.45), transparent 60%),
+      radial-gradient(1100px 640px at 88% -12%, var(--bg-glow1), transparent 62%),
+      radial-gradient(900px 620px at -8% 112%, var(--bg-glow2), transparent 60%),
       var(--bg);
-    color: var(--text);
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    display: flex; flex-direction: column;
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
     -webkit-font-smoothing: antialiased;
   }
-  code, .mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; }
+  .mono { font-family: var(--mono); }
 
-  header.topbar {
-    display: flex; align-items: center; gap: 1rem;
-    padding: 0.9rem 1.4rem;
-    border-bottom: 1px solid var(--line);
-    background: oklch(19% 0.02 275 / 0.7);
-    backdrop-filter: blur(10px);
-    position: sticky; top: 0; z-index: 5;
+  /* ── top bar ─────────────────────────────────────────────── */
+  header.bar {
+    display: flex; align-items: center; gap: 0.9rem;
+    padding: 0.85rem 1.5rem; border-bottom: 1px solid var(--line-soft);
+    background: oklch(17% 0.02 270 / 0.55); backdrop-filter: blur(14px);
+    z-index: 5;
   }
   .brand { display: flex; align-items: baseline; gap: 0.6rem; }
-  .brand h1 { font-size: 1.02rem; margin: 0; letter-spacing: -0.01em; font-weight: 650; }
+  .brand .logo {
+    font-weight: 760; font-size: 1.05rem; letter-spacing: -0.025em;
+    background: linear-gradient(92deg, var(--perception), var(--decision) 55%, var(--action));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
   .brand .sub { font-size: 0.72rem; color: var(--faint); letter-spacing: 0.02em; }
-  .roles { display: flex; gap: 0.4rem; margin-left: 0.4rem; }
-  .role-pill {
-    font-size: 0.66rem; font-weight: 600; letter-spacing: 0.04em;
-    padding: 0.18rem 0.5rem; border-radius: 999px;
-    border: 1px solid var(--line); color: var(--muted);
-    text-transform: uppercase;
-  }
-  .role-pill[data-r=M] { color: var(--memory); border-color: oklch(80% 0.13 75 / 0.4); }
-  .role-pill[data-r=P] { color: var(--perception); border-color: oklch(72% 0.16 300 / 0.4); }
-  .role-pill[data-r=D] { color: var(--decision); border-color: oklch(78% 0.13 220 / 0.4); }
-  .role-pill[data-r=A] { color: var(--action); border-color: oklch(78% 0.15 150 / 0.4); }
   .spacer { flex: 1; }
-  .status {
-    font-size: 0.74rem; color: var(--muted);
-    display: flex; align-items: center; gap: 0.45rem;
-  }
-  .dot {
-    width: 9px; height: 9px; border-radius: 50%;
-    background: var(--faint); box-shadow: 0 0 0 0 transparent;
-  }
-  .dot.run { background: var(--decision); animation: pulse 1.3s var(--ease) infinite; }
+  .status { display: flex; align-items: center; gap: 0.5rem; font-size: 0.76rem; color: var(--muted); }
+  .status .label { font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); transition: background 0.3s var(--ease); }
+  .dot.run  { background: var(--decision); animation: pulse 1.25s var(--ease) infinite; }
   .dot.done { background: var(--action); }
-  .dot.err { background: var(--danger); }
-  @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 oklch(78% 0.13 220 / 0.6); }
-    100% { box-shadow: 0 0 0 9px transparent; }
-  }
+  .dot.err  { background: var(--danger); }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 oklch(79% 0.13 222 / .55);} 100%{box-shadow:0 0 0 10px transparent;} }
 
-  main {
-    flex: 1; min-height: 0;
-    display: grid; grid-template-columns: minmax(320px, 0.9fr) 1.4fr;
-    gap: 1.1rem; padding: 1.1rem 1.4rem 0;
+  /* ── loop diagram band ───────────────────────────────────── */
+  .loopband {
+    display: flex; align-items: center; justify-content: center; gap: 0.2rem;
+    padding: 1.05rem 1.5rem; border-bottom: 1px solid var(--line-soft);
+    background: linear-gradient(180deg, oklch(18% 0.02 270 / 0.5), transparent);
   }
-  @media (max-width: 880px) { main { grid-template-columns: 1fr; } }
+  .node {
+    --c: var(--faint);
+    position: relative; display: flex; flex-direction: column; align-items: center;
+    gap: 0.32rem; padding: 0.55rem 1.15rem; border-radius: var(--r);
+    border: 1px solid var(--line); background: var(--surface);
+    min-width: 116px; transition: all 0.35s var(--ease);
+  }
+  .node .glyph { font-size: 1.05rem; font-weight: 800; color: var(--c); transition: color 0.35s var(--ease); }
+  .node .name { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+  .node.active {
+    border-color: color-mix(in oklch, var(--c) 60%, transparent);
+    background: color-mix(in oklch, var(--c) 14%, var(--surface));
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--c) 45%, transparent),
+                0 8px 30px color-mix(in oklch, var(--c) 22%, transparent);
+    transform: translateY(-2px);
+  }
+  .node.active .name { color: var(--text); }
+  .node.M{--c:var(--memory);} .node.P{--c:var(--perception);}
+  .node.D{--c:var(--decision);} .node.A{--c:var(--action);}
+  .conn { width: 38px; height: 2px; position: relative; background: var(--line); border-radius: 2px; flex: none; }
+  .conn::after { content:"›"; position:absolute; right:-3px; top:-11px; color: var(--faint); font-size: 0.9rem; }
+  .conn.lit { background: linear-gradient(90deg, var(--perception), var(--decision)); }
+  .loopback {
+    margin-left: 0.5rem; font-size: 0.64rem; color: var(--faint);
+    border: 1px dashed var(--line); border-radius: 999px; padding: 0.2rem 0.6rem;
+    display: flex; align-items: center; gap: 0.3rem;
+  }
+  .loopback b { color: var(--muted); font-weight: 600; }
 
+  /* ── main grid ───────────────────────────────────────────── */
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(330px, 0.92fr) 1.35fr; gap: 1.2rem; padding: 1.2rem 1.5rem 0; }
+  @media (max-width: 900px){ main { grid-template-columns: 1fr; } .loopband{ flex-wrap: wrap; } }
   .pane { display: flex; flex-direction: column; min-height: 0; }
-  .pane > h2 {
-    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em;
-    color: var(--faint); margin: 0 0 0.6rem; font-weight: 650;
-  }
-  .scroll { overflow-y: auto; padding-right: 0.4rem; min-height: 0; flex: 1; }
-  .scroll::-webkit-scrollbar { width: 9px; }
+  .pane > .h { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.7rem; }
+  .pane > .h h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--faint); margin: 0; font-weight: 680; }
+  .pane > .h .count { font-size: 0.66rem; color: var(--faint); margin-left: auto; font-variant-numeric: tabular-nums; }
+  .scroll { overflow-y: auto; padding-right: 0.45rem; min-height: 0; flex: 1; }
+  .scroll::-webkit-scrollbar { width: 8px; }
   .scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+  .scroll::-webkit-scrollbar-thumb:hover { background: var(--faint); }
 
-  /* answer pane */
-  .answer-card {
-    background: linear-gradient(160deg, var(--surface), var(--bg-2));
-    border: 1px solid var(--line); border-radius: var(--r);
-    padding: 1.1rem 1.2rem; white-space: pre-wrap; line-height: 1.55;
-    font-size: 0.93rem; color: var(--text);
-  }
-  .answer-card.empty { color: var(--faint); font-style: italic; }
+  /* query line + answer */
   .qline {
     background: var(--surface-2); border: 1px solid var(--line);
-    border-left: 3px solid var(--perception);
-    border-radius: 10px; padding: 0.7rem 0.9rem; margin-bottom: 0.9rem;
-    font-size: 0.9rem; color: var(--text);
+    border-left: 3px solid var(--perception); border-radius: var(--r-sm);
+    padding: 0.7rem 0.9rem; margin-bottom: 0.9rem; font-size: 0.9rem;
   }
-  .qline .lbl { font-size: 0.66rem; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; display:block; margin-bottom: 0.2rem; }
+  .qline .lbl { font-size: 0.62rem; color: var(--faint); text-transform: uppercase; letter-spacing: 0.07em; display:block; margin-bottom: 0.25rem; }
+  .answer {
+    background: linear-gradient(165deg, var(--raised), var(--surface));
+    border: 1px solid var(--line); border-radius: var(--r-lg);
+    padding: 1.15rem 1.25rem; white-space: pre-wrap; line-height: 1.6; font-size: 0.93rem;
+    box-shadow: 0 10px 40px oklch(10% 0.02 270 / 0.4);
+  }
+  .answer.empty { color: var(--faint); border-style: dashed; box-shadow: none; background: var(--surface); }
+  .answer.empty .big { display:block; color: var(--muted); font-weight: 650; font-size: 0.96rem; margin-bottom: 0.4rem; letter-spacing: -0.01em; }
 
   /* iteration timeline */
-  .iter {
-    border: 1px solid var(--line); border-radius: var(--r);
-    background: oklch(22% 0.022 275 / 0.6);
-    margin-bottom: 0.85rem; overflow: hidden;
-    animation: rise 0.4s var(--ease) both;
-  }
-  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-  .iter-head {
-    display: flex; align-items: center; gap: 0.6rem;
-    padding: 0.55rem 0.85rem; background: var(--surface);
-    border-bottom: 1px solid var(--line); font-size: 0.78rem;
-  }
-  .iter-head .n { font-weight: 700; color: var(--muted); }
+  .iter { border: 1px solid var(--line); border-radius: var(--r); background: oklch(19% 0.02 270 / 0.6); margin-bottom: 0.9rem; overflow: hidden; animation: rise 0.42s var(--ease) both; }
+  @keyframes rise { from{opacity:0; transform: translateY(10px);} to{opacity:1; transform:none;} }
+  .iter-head { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.85rem; background: var(--surface); border-bottom: 1px solid var(--line-soft); }
+  .iter-head .n { font-size: 0.66rem; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
   .iter-body { padding: 0.7rem 0.85rem; display: flex; flex-direction: column; gap: 0.6rem; }
+  .row { display: flex; gap: 0.65rem; }
+  .tag { flex: none; width: 1.6rem; height: 1.6rem; border-radius: var(--r-sm); display: grid; place-items: center; font-size: 0.74rem; font-weight: 850; border: 1px solid var(--line); }
+  .tag.M{color:var(--memory); background: color-mix(in oklch, var(--memory) 13%, transparent);}
+  .tag.P{color:var(--perception); background: color-mix(in oklch, var(--perception) 13%, transparent);}
+  .tag.D{color:var(--decision); background: color-mix(in oklch, var(--decision) 13%, transparent);}
+  .tag.A{color:var(--action); background: color-mix(in oklch, var(--action) 13%, transparent);}
+  .cc { flex: 1; min-width: 0; }
+  .cc .rn { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); margin-bottom: 0.25rem; }
 
-  .row { display: flex; gap: 0.6rem; }
-  .role-tag {
-    flex: none; width: 1.55rem; height: 1.55rem; border-radius: 8px;
-    display: grid; place-items: center; font-size: 0.72rem; font-weight: 800;
-    border: 1px solid var(--line);
-  }
-  .role-tag.M { color: var(--memory); background: oklch(80% 0.13 75 / 0.12); }
-  .role-tag.P { color: var(--perception); background: oklch(72% 0.16 300 / 0.12); }
-  .role-tag.D { color: var(--decision); background: oklch(78% 0.13 220 / 0.12); }
-  .role-tag.A { color: var(--action); background: oklch(78% 0.15 150 / 0.12); }
-  .card-content { flex: 1; min-width: 0; }
-  .card-content .role-name { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); margin-bottom: 0.25rem; }
-
-  ul.goals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+  ul.goals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.32rem; }
   ul.goals li { display: flex; gap: 0.5rem; align-items: flex-start; font-size: 0.85rem; }
-  .check {
-    flex: none; width: 1.05rem; height: 1.05rem; border-radius: 5px; margin-top: 0.12rem;
-    border: 1.5px solid var(--faint); display: grid; place-items: center; font-size: 0.7rem;
-    transition: all 0.25s var(--ease);
-  }
-  .check.done { background: var(--action); border-color: var(--action); color: oklch(20% 0.03 150); }
-  li.done .gtext { color: var(--faint); text-decoration: line-through; text-decoration-color: oklch(60% 0.02 275 / 0.6); }
-  .attach { font-size: 0.66rem; color: var(--memory); border: 1px solid oklch(80% 0.13 75 / 0.35); border-radius: 6px; padding: 0 0.32rem; margin-left: 0.3rem; }
+  .check { flex: none; width: 1.05rem; height: 1.05rem; border-radius: 5px; margin-top: 0.1rem; border: 1.5px solid var(--faint); display: grid; place-items: center; font-size: 0.68rem; transition: all 0.25s var(--ease); }
+  .check.done { background: var(--action); border-color: var(--action); color: oklch(20% 0.03 152); }
+  li.done .gt { color: var(--faint); text-decoration: line-through; text-decoration-color: oklch(58% 0.02 270 / 0.6); }
+  .attach { font-size: 0.62rem; color: var(--memory); border: 1px solid color-mix(in oklch, var(--memory) 38%, transparent); border-radius: 6px; padding: 0 0.34rem; margin-left: 0.3rem; }
 
-  .toolcall, .toolresult, .answer-inline, .errbox {
-    font-size: 0.83rem; line-height: 1.5; border-radius: 9px; padding: 0.55rem 0.7rem;
-  }
-  .toolcall { background: oklch(78% 0.13 220 / 0.08); border: 1px solid oklch(78% 0.13 220 / 0.25); }
-  .toolcall .tname { color: var(--decision); font-weight: 700; }
-  .toolresult { background: oklch(78% 0.15 150 / 0.07); border: 1px solid oklch(78% 0.15 150 / 0.22); color: var(--muted); white-space: pre-wrap; max-height: 8.5rem; overflow: auto; }
-  .answer-inline { background: oklch(78% 0.13 220 / 0.06); border: 1px solid var(--line); white-space: pre-wrap; }
-  .errbox { background: oklch(70% 0.2 25 / 0.1); border: 1px solid oklch(70% 0.2 25 / 0.4); color: var(--danger); }
+  .toolcall, .toolresult, .ans-in, .errbox { font-size: 0.83rem; line-height: 1.5; border-radius: var(--r-sm); padding: 0.55rem 0.7rem; }
+  .toolcall { background: color-mix(in oklch, var(--decision) 9%, transparent); border: 1px solid color-mix(in oklch, var(--decision) 26%, transparent); }
+  .toolcall .tn { color: var(--decision); font-weight: 750; }
+  .toolresult { background: color-mix(in oklch, var(--action) 8%, transparent); border: 1px solid color-mix(in oklch, var(--action) 22%, transparent); color: var(--muted); white-space: pre-wrap; max-height: 9rem; overflow: auto; }
+  .ans-in { background: color-mix(in oklch, var(--decision) 7%, transparent); border: 1px solid var(--line); white-space: pre-wrap; }
+  .errbox { background: color-mix(in oklch, var(--danger) 11%, transparent); border: 1px solid color-mix(in oklch, var(--danger) 42%, transparent); color: var(--danger); }
   .argline { color: var(--faint); }
-  .pill-tiny { font-size: 0.62rem; color: var(--memory); }
+  .arttag { font-size: 0.6rem; color: var(--memory); }
+  .memchip { display: inline-flex; align-items: center; gap: 0.42rem; font-size: 0.76rem; background: color-mix(in oklch, var(--memory) 10%, transparent); border: 1px solid color-mix(in oklch, var(--memory) 30%, transparent); color: var(--memory); border-radius: 999px; padding: 0.3rem 0.72rem; margin-bottom: 0.7rem; animation: rise 0.4s var(--ease) both; }
 
-  .memchip {
-    display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.76rem;
-    background: oklch(80% 0.13 75 / 0.1); border: 1px solid oklch(80% 0.13 75 / 0.3);
-    color: var(--memory); border-radius: 999px; padding: 0.3rem 0.7rem; margin-bottom: 0.7rem;
-  }
-
-  footer.composer {
-    display: flex; gap: 0.7rem; padding: 1rem 1.4rem; align-items: center;
-    border-top: 1px solid var(--line); background: oklch(19% 0.02 275 / 0.7);
-    backdrop-filter: blur(10px); margin-top: 0.9rem;
-  }
+  /* composer */
+  footer.composer { padding: 0.95rem 1.5rem 1.1rem; border-top: 1px solid var(--line-soft); background: oklch(17% 0.02 270 / 0.55); backdrop-filter: blur(14px); display: flex; flex-direction: column; gap: 0.55rem; }
   .examples { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-  .ex {
-    font-size: 0.7rem; color: var(--muted); background: var(--surface);
-    border: 1px solid var(--line); border-radius: 999px; padding: 0.32rem 0.7rem;
-    cursor: pointer; transition: border-color 0.2s var(--ease), color 0.2s var(--ease);
-  }
-  .ex:hover { color: var(--text); border-color: var(--perception); }
-  form#composer { display: flex; gap: 0.6rem; flex: 1; }
-  input#q {
-    flex: 1; background: var(--surface); border: 1px solid var(--line);
-    border-radius: 11px; padding: 0.7rem 0.9rem; color: var(--text); font-size: 0.9rem;
-    transition: border-color 0.2s var(--ease);
-  }
-  input#q:focus { outline: none; border-color: var(--perception); }
-  button#send {
-    background: linear-gradient(135deg, var(--perception), var(--decision));
-    color: oklch(18% 0.02 275); font-weight: 700; border: none; border-radius: 11px;
-    padding: 0.7rem 1.3rem; cursor: pointer; font-size: 0.88rem;
-    transition: transform 0.15s var(--ease), opacity 0.2s var(--ease);
-  }
+  .ex { font-size: 0.7rem; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 0.34rem 0.72rem; cursor: pointer; transition: border-color 0.2s var(--ease), color 0.2s var(--ease), transform 0.12s var(--ease); }
+  .ex:hover { color: var(--text); border-color: var(--perception); transform: translateY(-1px); }
+  form#composer { display: flex; gap: 0.6rem; }
+  input#q { flex: 1; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0.75rem 0.95rem; color: var(--text); font-size: 0.9rem; transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease); }
+  input#q:focus { outline: none; border-color: var(--perception); box-shadow: 0 0 0 3px color-mix(in oklch, var(--perception) 22%, transparent); }
+  button#send { background: linear-gradient(135deg, var(--perception), var(--decision)); color: oklch(17% 0.02 270); font-weight: 750; border: none; border-radius: 12px; padding: 0.75rem 1.5rem; cursor: pointer; font-size: 0.88rem; transition: transform 0.14s var(--ease), opacity 0.2s var(--ease); }
   button#send:hover:not(:disabled) { transform: translateY(-1px); }
-  button#send:disabled { opacity: 0.5; cursor: default; }
-  .controls { display: flex; flex-direction: column; gap: 0.5rem; align-items: stretch; flex: 1; }
+  button#send:disabled { opacity: 0.45; cursor: default; }
 </style>
 </head>
 <body>
-  <header class="topbar">
+  <header class="bar">
     <div class="brand">
-      <h1>S6 Agent</h1>
-      <span class="sub">the loop is the agent</span>
-    </div>
-    <div class="roles">
-      <span class="role-pill" data-r="M">Memory</span>
-      <span class="role-pill" data-r="P">Perception</span>
-      <span class="role-pill" data-r="D">Decision</span>
-      <span class="role-pill" data-r="A">Action</span>
+      <span class="logo">S6 Agent</span>
+      <span class="sub">the agent is the loop</span>
     </div>
     <span class="spacer"></span>
-    <div class="status"><span class="dot" id="dot"></span><span id="status">idle</span></div>
+    <div class="status"><span class="dot" id="dot"></span><span class="label" id="status">idle</span></div>
   </header>
+
+  <!-- live loop diagram: nodes light up as each role fires -->
+  <div class="loopband" id="loopband">
+    <div class="node M" data-role="M"><span class="glyph">M</span><span class="name">Memory</span></div>
+    <div class="conn" data-c="0"></div>
+    <div class="node P" data-role="P"><span class="glyph">P</span><span class="name">Perception</span></div>
+    <div class="conn" data-c="1"></div>
+    <div class="node D" data-role="D"><span class="glyph">D</span><span class="name">Decision</span></div>
+    <div class="conn" data-c="2"></div>
+    <div class="node A" data-role="A"><span class="glyph">A</span><span class="name">Action</span></div>
+    <span class="loopback">↻ <b>loops</b>&nbsp;until done</span>
+  </div>
 
   <main>
     <section class="pane">
-      <h2>Answer</h2>
+      <div class="h"><h2>Answer</h2></div>
       <div class="scroll">
         <div id="qline" class="qline" hidden><span class="lbl">Query</span><span id="qtext"></span></div>
-        <div id="answer" class="answer-card empty">Ask something below — the agent's final answer lands here.</div>
+        <div id="answer" class="answer empty">
+          <span class="big">Pick a query below, or ask your own.</span>
+          Memory recalls what it knows · Perception breaks the task into goals · Decision makes one
+          move · Action runs a tool. The loop repeats until every goal is done — the final answer lands here.
+        </div>
       </div>
     </section>
 
     <section class="pane">
-      <h2>The loop · Memory → Perception → Decision → Action</h2>
+      <div class="h"><h2>The loop</h2><span class="count" id="count"></span></div>
       <div class="scroll" id="trace"></div>
     </section>
   </main>
 
   <footer class="composer">
-    <div class="controls">
-      <div class="examples" id="examples"></div>
-      <form id="composer">
-        <input id="q" type="text" placeholder="e.g. Fetch the Claude Shannon Wikipedia page and tell me his birth date, death date, and three contributions." required />
-        <button id="send" type="submit">Run</button>
-      </form>
-    </div>
+    <div class="examples" id="examples"></div>
+    <form id="composer" autocomplete="off">
+      <input id="q" type="text" placeholder="e.g. Fetch the Claude Shannon Wikipedia page and tell me his birth date, death date, and three contributions." required />
+      <button id="send" type="submit">Run</button>
+    </form>
   </footer>
 
 <script>
 const EXAMPLES = [
-  "Fetch https://en.wikipedia.org/wiki/Claude_Shannon and tell me his birth date, death date, and three key contributions to information theory.",
-  "Suggest three family-friendly things to do in Tokyo this weekend, check Saturday's weather via wttr.in, and recommend one based on the forecast.",
-  "My mom's birthday is 15 May 2026. Remind me two weeks before and on the day.",
-  "When is my mom's birthday?",
-  "Search for 'Python asyncio best practices', read the top three results, and list the advice they agree on.",
+  ["Query A · fetch + extract", "Fetch https://en.wikipedia.org/wiki/Claude_Shannon and tell me his birth date, death date, and three key contributions to information theory."],
+  ["Query B · multi-goal + weather", "Suggest three family-friendly things to do in Tokyo this weekend, check Saturday's weather via wttr.in, and recommend one based on the forecast."],
+  ["Query C1 · remember", "My mom's birthday is 15 May 2026. Remind me two weeks before and on the day."],
+  ["Query C2 · recall", "When is my mom's birthday?"],
+  ["Query D · synthesis", "Search for 'Python asyncio best practices', read the top three results, and list the advice they agree on."],
 ];
-const LABELS = ["Query A · fetch + extract", "Query B · multi-goal + weather", "Query C1 · remember", "Query C2 · recall", "Query D · synthesis"];
-
 const $ = (id) => document.getElementById(id);
-const trace = $("trace"), answerEl = $("answer"), dot = $("dot"), statusEl = $("status");
+const trace = $("trace"), answerEl = $("answer"), dot = $("dot"), statusEl = $("status"), countEl = $("count");
 const ROLE_NAME = { M: "Memory", P: "Perception", D: "Decision", A: "Action" };
+let iterBlocks = {}, iterCount = 0;
 
-// build example chips
 const exWrap = $("examples");
-EXAMPLES.forEach((q, i) => {
+EXAMPLES.forEach(([label, q]) => {
   const b = document.createElement("button");
-  b.type = "button"; b.className = "ex"; b.textContent = LABELS[i];
-  b.onclick = () => { $("q").value = q; };
+  b.type = "button"; b.className = "ex"; b.textContent = label;
+  b.onclick = () => { $("q").value = q; $("q").focus(); };
   exWrap.appendChild(b);
 });
 
-let iterBlocks = {}; // iter number -> body element
+function setStatus(t, cls){ statusEl.textContent = t; dot.className = "dot" + (cls ? " "+cls : ""); }
+function esc(s){ return (s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
 
-function setStatus(text, cls) { statusEl.textContent = text; dot.className = "dot" + (cls ? " " + cls : ""); }
+function lightRole(role){
+  document.querySelectorAll(".node").forEach(n => n.classList.toggle("active", n.dataset.role === role));
+  // light connectors up to the active node
+  const order = { M:0, P:1, D:2, A:3 }[role];
+  document.querySelectorAll(".conn").forEach(c => c.classList.toggle("lit", Number(c.dataset.c) < order));
+}
+function clearRoles(){ document.querySelectorAll(".node").forEach(n=>n.classList.remove("active")); document.querySelectorAll(".conn").forEach(c=>c.classList.remove("lit")); }
 
-function iterBody(n) {
+function iterBody(n){
   if (iterBlocks[n]) return iterBlocks[n];
+  iterCount = Math.max(iterCount, n); countEl.textContent = `${iterCount} iteration${iterCount>1?"s":""}`;
   const block = document.createElement("div"); block.className = "iter";
   const head = document.createElement("div"); head.className = "iter-head";
   head.innerHTML = `<span class="n">iteration ${n}</span>`;
   const body = document.createElement("div"); body.className = "iter-body";
   block.appendChild(head); block.appendChild(body); trace.appendChild(block);
-  iterBlocks[n] = body;
-  trace.scrollTop = trace.scrollHeight;
-  return body;
+  iterBlocks[n] = body; trace.scrollTop = trace.scrollHeight; return body;
 }
-
-function roleRow(role, innerHTML) {
-  const row = document.createElement("div"); row.className = "row";
-  row.innerHTML = `<div class="role-tag ${role}">${role}</div>`
-    + `<div class="card-content"><div class="role-name">${ROLE_NAME[role]}</div>${innerHTML}</div>`;
-  return row;
+function row(role, html){
+  const r = document.createElement("div"); r.className = "row";
+  r.innerHTML = `<div class="tag ${role}">${role}</div><div class="cc"><div class="rn">${ROLE_NAME[role]}</div>${html}</div>`;
+  return r;
 }
+const bottom = () => { trace.scrollTop = trace.scrollHeight; };
 
-function esc(s) { return (s ?? "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
-
-function handle(ev) {
-  if (ev.kind === "user") {
-    $("qline").hidden = false; $("qtext").textContent = ev.text;
-    answerEl.className = "answer-card empty"; answerEl.textContent = "Running the loop…";
-    return;
-  }
-  if (ev.kind === "memory") {
-    const chip = document.createElement("div"); chip.className = "memchip";
-    chip.innerHTML = `<span>🧠</span><span>${esc(ev.text)}</span>`;
-    trace.appendChild(chip); trace.scrollTop = trace.scrollHeight; return;
-  }
-  if (ev.kind === "perception") {
-    const body = iterBody(ev.iter);
-    let prev = body.querySelector(".row-perception"); if (prev) prev.remove();
-    const items = ev.goals.map(g =>
-      `<li class="${g.done ? "done" : ""}"><span class="check ${g.done ? "done" : ""}">${g.done ? "✓" : ""}</span>`
-      + `<span class="gtext">${esc(g.text)}${g.attach ? `<span class="attach">${esc(g.attach)}</span>` : ""}</span></li>`).join("");
-    const row = roleRow("P", `<ul class="goals">${items}</ul>`);
-    row.classList.add("row-perception");
-    body.prepend(row);
-    trace.scrollTop = trace.scrollHeight; return;
-  }
-  if (ev.kind === "tool_call") {
-    const body = iterBody(ev.iter);
-    const args = esc(JSON.stringify(ev.arguments));
-    body.appendChild(roleRow("D",
-      `<div class="toolcall mono"><span class="tname">${esc(ev.tool)}</span>(<span class="argline">${args}</span>)</div>`));
-    trace.scrollTop = trace.scrollHeight; return;
-  }
-  if (ev.kind === "tool_result") {
-    const body = iterBody(ev.iter);
-    const art = ev.artifact_id ? `<span class="pill-tiny">→ ${esc(ev.artifact_id)}</span> ` : "";
-    body.appendChild(roleRow("A", `${art}<div class="toolresult mono">${esc(ev.result)}</div>`));
-    trace.scrollTop = trace.scrollHeight; return;
-  }
-  if (ev.kind === "answer") {
-    const body = iterBody(ev.iter);
-    body.appendChild(roleRow("D", `<div class="answer-inline">${esc(ev.text)}</div>`));
-    trace.scrollTop = trace.scrollHeight; return;
-  }
-  if (ev.kind === "error") {
-    const body = iterBody(ev.iter || 1);
-    body.appendChild(roleRow("A", `<div class="errbox mono">${esc(ev.text)}</div>`));
-    setStatus("error", "err"); return;
-  }
-  if (ev.kind === "final") {
-    answerEl.className = "answer-card";
-    answerEl.textContent = ev.text || "(no answer produced)";
-    setStatus("done", "done"); return;
-  }
-}
-
-async function runQuery(query) {
-  // reset
-  trace.innerHTML = ""; iterBlocks = {};
-  $("send").disabled = true; setStatus("running", "run");
-  try {
-    const resp = await fetch("/api/run", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
-    });
-    const reader = resp.body.getReader();
-    const dec = new TextDecoder(); let buf = "";
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const chunks = buf.split("\n\n"); buf = chunks.pop();
-      for (const c of chunks) {
-        const line = c.split("\n").find(l => l.startsWith("data: "));
-        if (line) handle(JSON.parse(line.slice(6)));
-      }
+function handle(ev){
+  switch(ev.kind){
+    case "user":
+      $("qline").hidden = false; $("qtext").textContent = ev.text;
+      answerEl.className = "answer"; answerEl.textContent = "Running the loop…"; break;
+    case "memory": {
+      lightRole("M");
+      const chip = document.createElement("div"); chip.className = "memchip";
+      chip.innerHTML = `<span>🧠</span><span>${esc(ev.text)}</span>`;
+      trace.appendChild(chip); bottom(); break;
     }
-    if (dot.className.indexOf("done") === -1 && dot.className.indexOf("err") === -1) setStatus("done", "done");
-  } catch (e) {
-    setStatus("connection error", "err");
-    answerEl.className = "answer-card"; answerEl.textContent = "Stream failed: " + e.message
-      + "\n\nIs the gateway up on :8101 and the server launched from agentic/?";
-  } finally {
-    $("send").disabled = false;
+    case "perception": {
+      lightRole("P");
+      const body = iterBody(ev.iter);
+      const prev = body.querySelector(".row-p"); if (prev) prev.remove();
+      const items = ev.goals.map(g =>
+        `<li class="${g.done?"done":""}"><span class="check ${g.done?"done":""}">${g.done?"✓":""}</span>`+
+        `<span class="gt">${esc(g.text)}${g.attach?`<span class="attach">${esc(g.attach)}</span>`:""}</span></li>`).join("");
+      const r = row("P", `<ul class="goals">${items}</ul>`); r.classList.add("row-p");
+      body.prepend(r); bottom(); break;
+    }
+    case "tool_call": {
+      lightRole("D");
+      const body = iterBody(ev.iter);
+      body.appendChild(row("D", `<div class="toolcall mono"><span class="tn">${esc(ev.tool)}</span>(<span class="argline">${esc(JSON.stringify(ev.arguments))}</span>)</div>`));
+      bottom(); break;
+    }
+    case "tool_result": {
+      lightRole("A");
+      const body = iterBody(ev.iter);
+      const art = ev.artifact_id ? `<span class="arttag">→ ${esc(ev.artifact_id)}</span> ` : "";
+      body.appendChild(row("A", `${art}<div class="toolresult mono">${esc(ev.result)}</div>`));
+      bottom(); break;
+    }
+    case "answer": {
+      lightRole("D");
+      const body = iterBody(ev.iter);
+      body.appendChild(row("D", `<div class="ans-in">${esc(ev.text)}</div>`));
+      bottom(); break;
+    }
+    case "error": {
+      const body = iterBody(ev.iter || 1);
+      body.appendChild(row("A", `<div class="errbox mono">${esc(ev.text)}</div>`));
+      setStatus("error", "err"); break;
+    }
+    case "final":
+      clearRoles();
+      answerEl.className = "answer"; answerEl.textContent = ev.text || "(no answer produced)";
+      setStatus("done", "done"); break;
   }
 }
 
-$("composer").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const q = $("q").value.trim();
-  if (q) runQuery(q);
-});
+async function runQuery(query){
+  trace.innerHTML = ""; iterBlocks = {}; iterCount = 0; countEl.textContent = "";
+  clearRoles(); $("send").disabled = true; setStatus("running", "run");
+  try {
+    const resp = await fetch("/api/run", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ query }) });
+    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    while(true){
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream:true });
+      const parts = buf.split("\n\n"); buf = parts.pop();
+      for (const p of parts){ const l = p.split("\n").find(x => x.startsWith("data: ")); if (l) handle(JSON.parse(l.slice(6))); }
+    }
+    if (!/done|err/.test(dot.className)) setStatus("done", "done");
+  } catch(e){
+    setStatus("connection error", "err"); clearRoles();
+    answerEl.className = "answer"; answerEl.textContent = "Stream failed: " + e.message + "\n\nIs the gateway up on :8101 and the server launched from agentic/?";
+  } finally { $("send").disabled = false; }
+}
+
+$("composer").addEventListener("submit", (e) => { e.preventDefault(); const q = $("q").value.trim(); if (q) runQuery(q); });
 </script>
 </body>
 </html>
