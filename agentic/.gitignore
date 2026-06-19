@@ -1,8 +1,6 @@
-# runtime state — excluded by .gitignore per the assignment submission rubric
-# ("the state/ directory excluded by .gitignore"). Cleanable between attempts
-# with `rm -rf state sandbox`.
+# runtime state — excluded by .gitignore per the assignment submission rubric.
+# Cleanable between attempts with `rm -rf state`.
 state/
-sandbox/
 usage.json
 
 # secrets
@@ -14,9 +12,13 @@ __pycache__/
 .venv/
 .uv/
 
-# PROVIDED course code — dropped in locally, NOT redistributed here.
-# Get these from the Session 6 lesson; place mcp_server.py next to this file and
-# run the gateway from its own folder.
-mcp_server.py
+# Sandbox is runtime-mutable, but our test corpus (papers/) IS part of the
+# submission. Keep papers/, ignore everything else under sandbox/.
+sandbox/*
+!sandbox/papers/
+
+# Provided gateway code only (their versions); our mcp_server.py + our
+# S7 tools (index_document, search_knowledge) are tracked.
 llm_gatewayV3/
 llm_gatewayV2/
+llm_gatewayV7/

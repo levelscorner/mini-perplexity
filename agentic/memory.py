@@ -19,12 +19,17 @@ from pathlib import Path
 
 from gateway_client import Gateway
 from schemas import MemoryItem, MemoryKind, ToolCall
+from vector_index import VectorIndex
 
 _STOPWORDS = {
     "the", "a", "an", "is", "are", "was", "were", "of", "to", "in", "on", "for",
     "and", "or", "my", "me", "i", "you", "it", "this", "that", "what", "when",
     "where", "who", "how", "do", "does", "give", "tell", "with", "at", "by",
 }
+
+# S7: kinds for which an embedding is computed at write time. Scratchpad is
+# run-scoped — skipping the vector path keeps it cheap.
+_EMBEDDABLE_KINDS = {"fact", "preference", "tool_outcome"}
 
 
 def _tokens(text: str) -> set[str]:
@@ -37,6 +42,16 @@ class Memory:
         self.gateway = gateway
         self.path = Path(path)
         self.items: list[MemoryItem] = self._load()
+        # S7 vector index lives alongside memory.json
+        self._index = VectorIndex(self.path.parent)
+        # Rebuild from existing items on cold start (no FAISS files yet but
+        # memory.json had embeddings from a prior run).
+        if self._index.size == 0:
+            for item in self.items:
+                if item.embedding is not None:
+                    self._index.add(item.id, item.embedding)
+            if self._index.size > 0:
+                self._index.persist()
 
     # ---- persistence -------------------------------------------------------
     def _load(self) -> list[MemoryItem]:
@@ -51,10 +66,46 @@ class Memory:
             json.dumps([json.loads(i.model_dump_json()) for i in self.items], indent=2)
         )
 
-    # ---- reads (NO LLM) ----------------------------------------------------
-    def read(self, query: str, history: list[dict] | None = None,
-             kinds: list[MemoryKind] | None = None, top_k: int = 8) -> list[MemoryItem]:
-        """Rank items by lowercase-token overlap of query vs (keywords + descriptor)."""
+    # ---- S7 embed helper ---------------------------------------------------
+    def _try_embed(self, text: str, *, task_type: str) -> list[float] | None:
+        """Compute an embedding via the gateway. Returns None if the gateway
+        is unavailable — the caller decides whether to persist anyway. The
+        memory write path always persists; vectorless items stay reachable
+        through the keyword fallback."""
+        try:
+            return self.gateway.embed(text, task_type=task_type)
+        except Exception as exc:
+            print(f"[memory] embed skipped: {type(exc).__name__}: {str(exc)[:80]}")
+            return None
+
+    # ---- reads (NO LLM in keyword path; one embed call on vector path) -----
+    def _vector_search(self, query: str,
+                       kinds: list[MemoryKind] | None,
+                       top_k: int) -> list[MemoryItem]:
+        qvec = self._try_embed(query, task_type="retrieval_query")
+        if qvec is None or self._index.size == 0:
+            return []
+        # over-fetch when filtering by kind so the post-filter still has top_k
+        hits = self._index.search(qvec, k=top_k * 2 if kinds else top_k)
+        if not hits:
+            return []
+        by_id = {it.id: it for it in self.items}
+        out: list[MemoryItem] = []
+        for item_id, _score in hits:
+            it = by_id.get(item_id)
+            if it is None:
+                continue
+            if kinds and it.kind not in kinds:
+                continue
+            out.append(it)
+            if len(out) >= top_k:
+                break
+        return out
+
+    def _keyword_search(self, query: str,
+                        kinds: list[MemoryKind] | None,
+                        top_k: int) -> list[MemoryItem]:
+        """S6 keyword overlap — used as fallback when the vector path is empty."""
         q = _tokens(query)
         scored: list[tuple[int, MemoryItem]] = []
         for it in self.items:
@@ -66,6 +117,18 @@ class Memory:
                 scored.append((score, it))
         scored.sort(key=lambda s: s[0], reverse=True)
         return [it for _, it in scored[:top_k]]
+
+    def read(self, query: str, history: list[dict] | None = None,
+             kinds: list[MemoryKind] | None = None, top_k: int = 8) -> list[MemoryItem]:
+        """S7: vector-first; fall back to S6 keyword overlap when vector is empty.
+
+        Vector path catches semantic recall ("credit assignment" → docs about
+        "blame propagation"). Keyword path catches exact-term queries and runs
+        when there's no embedding (empty corpus, gateway down)."""
+        vec_hits = self._vector_search(query, kinds, top_k)
+        if vec_hits:
+            return vec_hits
+        return self._keyword_search(query, kinds, top_k)
 
     def filter(self, kinds: list[MemoryKind] | None = None,
                goal_id: str | None = None, recent: int | None = None) -> list[MemoryItem]:
@@ -79,22 +142,60 @@ class Memory:
         return out
 
     # ---- writes ------------------------------------------------------------
+    def _persist(self, item: MemoryItem) -> MemoryItem:
+        """Append to JSON store + (if embedded) the FAISS index.
+
+        Reload from disk BEFORE appending — agent and MCP subprocess both
+        hold Memory instances pointing at the same files. Without the
+        reload, whichever process writes last clobbers the other's items.
+        At S7 scale this is fast (small JSON) and race-tolerant."""
+        self.items = self._load()
+        self.items.append(item)
+        self._save()
+        if item.embedding is not None and item.kind in _EMBEDDABLE_KINDS:
+            # FAISS index also gets re-read so the agent process sees facts
+            # the MCP subprocess just wrote.
+            from vector_index import VectorIndex
+            self._index = VectorIndex(self.path.parent)
+            self._index.add(item.id, item.embedding)
+            self._index.persist()
+        return item
+
     def record_outcome(self, tool_call: ToolCall, result_text: str,
                        artifact_id: str | None, run_id: str,
                        goal_id: str | None = None) -> MemoryItem:
-        """NO LLM. kind='tool_outcome'; keywords from tool name + arg tokens."""
+        """NO LLM classify. kind='tool_outcome'; keywords from tool name +
+        arg tokens. S7: also embeds the descriptor for vector recall."""
         kw = list(_tokens(tool_call.name) | _tokens(json.dumps(tool_call.arguments)))
+        descriptor = (f"{tool_call.name}({json.dumps(tool_call.arguments)[:80]}) -> "
+                      f"{result_text[:80]}")
+        embedding = self._try_embed(descriptor, task_type="retrieval_document")
         item = MemoryItem(
             id=uuid.uuid4().hex[:8], kind="tool_outcome", keywords=kw,
-            descriptor=f"{tool_call.name}({json.dumps(tool_call.arguments)[:80]}) -> "
-                       f"{result_text[:80]}",
+            descriptor=descriptor,
             value={"tool": tool_call.name, "arguments": tool_call.arguments,
                    "result": result_text[:500]},
-            artifact_id=artifact_id, source=tool_call.name, run_id=run_id, goal_id=goal_id,
+            artifact_id=artifact_id, embedding=embedding,
+            source=tool_call.name, run_id=run_id, goal_id=goal_id,
         )
-        self.items.append(item)
-        self._save()
-        return item
+        return self._persist(item)
+
+    def add_fact(self, *, descriptor: str, value: dict | None = None,
+                 keywords: list[str] | None = None, source: str,
+                 run_id: str, goal_id: str | None = None) -> MemoryItem:
+        """S7: direct fact write used by index_document. Skips the LLM
+        classifier (kind is known) but still embeds the descriptor."""
+        kw = keywords if keywords is not None else list(_tokens(descriptor))[:10]
+        embedding = self._try_embed(descriptor, task_type="retrieval_document")
+        item = MemoryItem(
+            id=uuid.uuid4().hex[:8], kind="fact",
+            keywords=[k.lower() for k in kw],
+            descriptor=descriptor,
+            value=value or {},
+            embedding=embedding,
+            source=source, run_id=run_id, goal_id=goal_id,
+        )
+        return self._persist(item)
 
     def remember(self, raw_text: str, source: str, run_id: str,
                  goal_id: str | None = None) -> MemoryItem | None:
@@ -119,16 +220,20 @@ class Memory:
         )
         if parsed.get("kind") in (None, "none"):
             return None
+        kind = parsed["kind"]
+        descriptor = parsed.get("descriptor", "")
+        # S7: embed the descriptor for vector recall (only for embeddable kinds).
+        embedding = (self._try_embed(descriptor, task_type="retrieval_document")
+                     if kind in _EMBEDDABLE_KINDS else None)
         item = MemoryItem(
-            id=uuid.uuid4().hex[:8], kind=parsed["kind"],
+            id=uuid.uuid4().hex[:8], kind=kind,
             keywords=parsed.get("keywords", []),
-            descriptor=parsed.get("descriptor", ""),
+            descriptor=descriptor,
             value=parsed.get("value", {}),
+            embedding=embedding,
             source=source, run_id=run_id, goal_id=goal_id,
         )
-        self.items.append(item)
-        self._save()
-        return item
+        return self._persist(item)
 
 
 # ── MEMORY-WRITER prompt (owned, PoP-qualified). One classify call per user message.

@@ -12,6 +12,8 @@ dependencies = [
     "crawl4ai>=0.8.6",
     "fastapi>=0.136.1",
     "uvicorn>=0.47.0",
+    "faiss-cpu>=1.14.3",
+    "numpy>=2.4.6",
 ]
 
 # The PROVIDED mcp_server.py additionally needs: ddgs, crawl4ai, tavily

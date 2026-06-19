@@ -93,6 +93,30 @@ class Gateway:
         if auto_route and SEND_AUTO_ROUTE and not prov:
             body["auto_route"] = auto_route
 
+    # ---- 4. embeddings (S7 — vector memory) -------------------------------
+    def embed(self, text: str, *, task_type: str = "retrieval_document",
+              provider: str | None = None) -> list[float]:
+        """Hit V7's POST /v1/embed. Returns the 768-dim vector for `text`.
+
+        task_type ∈ {"retrieval_document", "retrieval_query"} — nomic and
+        gemini both take a task-type hint that improves retrieval quality.
+        Use "retrieval_document" when embedding *content to index*, and
+        "retrieval_query" when embedding *a query to search with*.
+        """
+        body: dict[str, Any] = {"text": text, "task_type": task_type}
+        if provider:
+            body["provider"] = provider
+        last: httpx.HTTPStatusError | None = None
+        for attempt in range(MAX_RETRIES):
+            r = self._client.post(self.base_url + "/v1/embed", json=body)
+            if r.status_code in RETRY_STATUSES and attempt < MAX_RETRIES - 1:
+                time.sleep(2 ** attempt)
+                continue
+            r.raise_for_status()
+            return r.json()["embedding"]
+        r.raise_for_status()
+        return r.json()["embedding"]
+
     def _post(self, body: dict) -> dict:
         last: httpx.HTTPStatusError | None = None
         for attempt in range(MAX_RETRIES):

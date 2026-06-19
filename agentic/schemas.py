@@ -32,6 +32,7 @@ class MemoryItem(BaseModel):
     descriptor: str = ""            # one short human-readable line
     value: dict = Field(default_factory=dict)  # structured payload
     artifact_id: str | None = None  # handle into the artifact store, if any
+    embedding: list[float] | None = None  # S7: 768-dim vector for facts/prefs/outcomes
     source: str = ""
     run_id: str = ""
     goal_id: str | None = None
