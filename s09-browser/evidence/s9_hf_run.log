@@ -1,0 +1,26 @@
+
+══════════════════════════════════════════════════════════════════════════════
+session s8-8eabe810  ─  query: What are the top 3 most-liked open-source LLMs on Hugging Face right now (text-generation models, sorted by likes)? For each give the model name, parameter count, and a one-line description. Use the Browser skill to interact with huggingface.co/models.
+══════════════════════════════════════════════════════════════════════════════
+[n:1] planner            complete (4.0s)
+[n:2] browser            complete (46.5s)
+[n:3] distiller          complete (4.6s)
+[n:5] critic             complete (3.5s)
+[n:4] formatter          complete (3.9s)
+
+══════════════════════════════════════════════════════════════════════════════
+FINAL: Here are the top 3 most-liked open-source LLMs for text generation on Hugging Face:
+
+1. **deepseek-ai/DeepSeek-R1**
+   - Parameter Count: 685B
+   - Description: Text Generation
+
+2. **deepseek-ai/DeepSeek-V4-Pro**
+   - Parameter Count: 862B
+   - Description: Text Generation
+
+3. **microsoft/phi-2**
+   - Parameter Count: 3B
+   - Description: Text Generation
+══════════════════════════════════════════════════════════════════════════════
+

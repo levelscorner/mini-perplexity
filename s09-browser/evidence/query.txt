@@ -1,0 +1,1 @@
+What are the top 3 most-liked open-source LLMs on Hugging Face right now (text-generation models, sorted by likes)? For each give the model name, parameter count, and a one-line description. Use the Browser skill to interact with huggingface.co/models.
