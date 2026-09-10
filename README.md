@@ -6,6 +6,8 @@ A research agent that mimics the core loop of Perplexity AI. Single-agent loop, 
 
 Originally built as the **S03 submission** for [EAG V3](https://github.com/levelscorner/levelscorner-eva3) (The School of AI). Step-by-step build walkthrough lives in [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md).
 
+> **Session 7 (Memory & Retrieval) submission lives in [`agentic/S07-README.md`](agentic/S07-README.md).** It contains the corpus manifest (5 items), three query traces (base E/F/G), and an explicit statement of which rubric deliverables are not met.
+
 ---
 
 ## The three tools
