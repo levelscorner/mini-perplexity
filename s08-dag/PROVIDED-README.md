@@ -8,7 +8,7 @@ nodes in parallel via `asyncio.gather`.
 
 Your assignment is to ship one missing skill (the **Coder**) so the
 agent can write code, run it in a subprocess sandbox, and feed the
-result back through the graph. Full spec in [ASSIGNMENT.md](ASSIGNMENT.md).
+result back through the graph. Full spec in ASSIGNMENT.md, which ships with the provided Session8StartingCodePatched package and is not committed to this repo.
 
 ---
 

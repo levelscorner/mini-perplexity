@@ -5,10 +5,7 @@
 > code WE write — the Coder skill prompt and a new `fact_checker` skill —
 > are documented in this README. All runtime modifications are
 > additive; `flow.py`, `recovery.py`, `persistence.py`, `skills.py`
-> are byte-identical to the provided package. The S6/S7 modules
-> (`memory.py`, `perception.py`, `decision.py`, `action.py`,
-> `vector_index.py`, `artifacts.py`, `mcp_server.py`) are byte-identical
-> to S7 — same loop carried forward.
+> are unmodified by us, though the provided package is not committed here so a grader cannot diff against it. The S6/S7 modules (`memory.py`, `perception.py`, `decision.py`, `action.py`, `vector_index.py`, `artifacts.py`, `mcp_server.py`) are the versions shipped inside the provided S8 package — they are NOT identical to our own S7 branch `s07/memory-retrieval` (every one of the seven differs; e.g. memory.py is 300 lines there vs 383 here).
 >
 > Branch: `s08/dag-orchestration` of
 > `github.com/levelscorner/mini-perplexity`. See also the per-session
@@ -120,18 +117,18 @@ session s8-f76b4f34
 [n:3] fact_checker       complete (18.3s)
 [n:5] planner            complete (10.6s)
 ```
-What this demonstrates (S8 assignment item #5 + a free demonstration
-of item #3):
+What this demonstrates (S8 assignment item #5 only — item #3 is NOT
+demonstrated here; this trace contains no critic node, no verdict, one
+run, and no corrected final answer):
 
 - The Planner DID route to `fact_checker`. Our new skill is reachable
   from the catalogue and the Planner's prompt teaches it correctly.
 - `fact_checker` called `web_search` and `fetch_url` against
   `en.wikipedia.org/w/api.php`, `grokipedia.com`, and Google to verify
-  the Eiffel Tower and Everest claims (visible in the gateway log).
+  the Eiffel Tower and Everest claims. The gateway log that showed those tool calls was not captured and is not committed, so this point rests on the terminal transcript above and cannot be independently checked from this repo.
 - A transient `TaskGroup` exception killed n:2 → the **recovery
   classifier** in `recovery.py` triaged it as `upstream_failure` →
-  **the orchestrator spliced in a recovery Planner (n:5)** → which
-  re-queued `fact_checker` (n:3) → which completed in 18.3s.
+  **the orchestrator spliced in a recovery Planner (n:5)** for the failed n:2. Note what the trace does NOT show: n:3 was emitted by the original planner n:1, not by the recovery planner — node ids are monotonic (`flow.py:45-47`), so n:3 and n:4 already existed when n:2 failed and n:5 was created. n:2 and n:3 ran concurrently in the same batch; the second fact_checker simply succeeded where the first raised. The recovery planner n:5 completed at 10.6s but emitted no further nodes (no n:6+ appears), no formatter ran, and this session produced no final answer. What is demonstrated is failure classification and recovery-node creation — not a completed recovery.
 - This is exactly the splice mechanism the lesson describes for a
   Critic-fail recovery, exercised here via a transient upstream
   failure. The mechanism (recovery splice) is mechanism; the verdict
@@ -141,18 +138,16 @@ of item #3):
 
 The provided `agent_config.yaml` declares `distiller: critic: true` so
 the orchestrator auto-splices a Critic between any Distiller and its
-successor (verified by the provided `tests/test_critic_autoinsert.py`,
-all green). The S9 lesson documents the bug we'd otherwise have hit: a
+successor. No test on this branch covers that auto-insertion: `tests/test_recovery.py` is the only test file, and it imports only `recovery` and `schemas`, never `flow`. Its 4 critic tests exercise `handle_critic_verdict` against a stub graph (the fail-splice policy), not `Graph.extend_from`'s splice. The S9 lesson documents the bug we'd otherwise have hit: a
 pre-planned Distiller→Formatter edge would *not* have triggered the
 auto-insert because the child wasn't dynamically `added`. The S9 patch
 to `flow.py:153-167` reads outgoing edges instead and splices on
-every non-Critic outgoing edge. We inherit the S9-patched flow.py.
+every non-Critic outgoing edge. **We do NOT inherit that patch.** flow.py on this branch is the unpatched provided version — line 155 reads `if src_def.critic and added:`, so the bug described above is live here. The patch lands later, on branch `s09/browser-agents` in `s09-browser/code/flow.py:161`.
 
 Reproducible pass-and-fail with verdict change across two runs is the
 piece we did not engineer this submission round — the queries above
 exercise the splice mechanism via the recovery path (transient-failure
-→ Planner re-plan) but not the Critic's binary verdict. The plumbing
-is wired; the policy work is a separate exercise (the lesson's own
+→ Planner re-plan) but not the Critic's binary verdict. **The plumbing is not wired either.** On this branch `flow.py:155` guards the splice with `if src_def.critic and added:`, so a pre-planned Distiller→Formatter edge produces no Critic node at all — verified by calling `Graph.extend_from` on that plan and getting zero critic nodes. Item #3 is unmet on both mechanism and policy; the policy work (the lesson's own
 "verdict quality vs mechanism" point). For a clean Critic
 pass-and-fail demo we'd give the Critic a tool (e.g. a
 `count_syllables` MCP tool) and ask for a syllable-strict haiku — that's
@@ -163,19 +158,21 @@ the S9 forward pointer ("Critic with tools").
 ```
 prompts/coder.md            — filled the stub (was: "STUB — STUDENT ASSIGNMENT")
 prompts/fact_checker.md     — NEW (the new skill's prompt)
-agent_config.yaml           — +9 lines (fact_checker entry)
-prompts/planner.md          — +6 lines (fact_checker rule)
+agent_config.yaml           — +13 lines (fact_checker entry, lines 49-60 plus separator)
+prompts/planner.md          — +9 lines (catalogue entry lines 9-10, rule lines 16-21, plus separator)
 ```
 
 Everything else in `code/` is byte-identical to
-`Session8StartingCodePatched`. Run `git log code/` on the patched
-package vs ours to verify.
+`Session8StartingCodePatched`. That package is not committed here, so this cannot be verified from the clone alone — diff `s08-dag/code/` against your own copy of the provided package to check.
 
 ## Setup & run
 
 ```bash
 # 1. V8 gateway on :8108
-cd llm_gatewayV8 && ./run.sh
+# 1. V8 gateway on :8108 — NOT included in this repo. Unzip the provided
+#    Session8StartingCodePatched gateway into `s08-dag/gateway/` (the path
+#    `code/gateway.py` resolves to), or point EAGV3_GATEWAY_DIR at it:
+cd s08-dag/gateway && uv run main.py
 
 # 2. Run a query
 cd code && uv sync && uv run python flow.py "<query>"
@@ -185,10 +182,15 @@ ls state/sessions/                     # find the session id
 python3 -c "import json; print(json.dumps(json.load(open('state/sessions/<sid>/graph.json')), indent=2))"
 ```
 
-State is excluded from git per the rubric (`state/sessions/`,
-`state/artifacts/`, `usage.json`).
+Session state is excluded by our own `s08-dag/.gitignore` (`code/state/`, `code/usage.json`) — this is our choice, not a rubric rule; the rubric's item 7 actually asks for results "via logs". Consequence: no `graph.json`, no per-node JSON, and no gateway log is committed for any of the four sessions quoted above, and `code/state/sessions/` is empty. The terminal transcripts in this README are the only record of those runs and cannot be independently verified from this repo.
 
 ## Honest limits this submission ships with
+
+0. **Assignment item 1 (the five base queries) is only 1/5 covered.**
+   Only `hello` was run and captured. The S7-carryover Shannon query,
+   the graceful-fail nonexistent-path query and the SIGKILL+resume
+   query were not run for this submission, and no wall-clock or
+   iteration bounds were measured against the stated limits.
 
 1. **The Critic pass-and-fail demo is not provided.** See the Critic
    section above for what's wired vs what's exercised.
