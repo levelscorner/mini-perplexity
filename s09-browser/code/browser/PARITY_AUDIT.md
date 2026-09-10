@@ -9,7 +9,7 @@ This doc cross-references our framework-free Layer-3 driver
 - **browser-use ref**: file path inside their repo (audit source of truth)
 
 Total shipped LOC: **~720** across 5 files
-(`__init__.py` 33 · `client.py` 82 · `dom.py` 187 · `driver.py` 283 · `highlight.py` 135).
+(`__init__.py` 43 · `client.py` 147 · `dom.py` 187 · `driver.py` 367 · `highlight.py` 135 — 879 lines as committed on this branch).
 That includes docstrings, blank lines, and the action schema; net code is ~520 LOC.
 
 ## Element enumeration
@@ -93,4 +93,4 @@ That includes docstrings, blank lines, and the action schema; net code is ~520 L
 
 The driver runs against excalidraw — pure-canvas, zero-a11y target — in 1 turn,
 2.4s, 1.9K tokens, with 16,981 pixel-diff changes consistent with a drawn rectangle.
-See [`tests/test_excalidraw_som.py`](../tests/test_excalidraw_som.py) and `out/excalidraw_som/`.
+The set-of-marks test (`tests/test_excalidraw_som.py`) and its `out/excalidraw_som/` captures are not included in this repo.
