@@ -3,7 +3,7 @@
 The Computer-Use skill talks to a Rust binary called `cua-driver` which
 exposes 34 native-OS automation tools (click, type, scan AX tree,
 screenshot, record trajectory) over a Unix socket. This file is the
-exact install sequence I followed, with the macOS TCC dance.
+The Computer-Use skill talks to a Rust binary called `cua-driver`. This file is the install sequence taken from the cua-driver documentation. **I have not run it** — the skill in this repo has never been executed against a live driver, so treat these steps as the intended path, not a verified transcript.
 
 ## Step 1 — Install the binary (sudo-free)
 
@@ -84,7 +84,7 @@ echo "Calculator pid=$PID wid=$WID"
 ~/.local/bin/cua-driver call get_window_state "{\"pid\":$PID,\"window_id\":$WID,\"capture_mode\":\"ax\",\"query\":\"button\"}" | python3 -c "import json,sys; d=json.load(sys.stdin); print('elements:', d.get('element_count'))"
 ```
 
-If `elements:` prints a non-zero number (typically 237 for Calculator),
+If `elements:` prints a non-zero number, the install + grants are good. If it prints `0`, re-check the Accessibility grant. (I have not run this check, so I have no observed count to quote.)
 the install + grants are good. If it prints `0`, re-check the
 Accessibility grant.
 

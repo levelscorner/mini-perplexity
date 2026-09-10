@@ -1,4 +1,4 @@
-# Session 9 — integration validation
+# Session 9 — integration validation\n\n> **Carried over unchanged from the S9 submission.** Nothing in this file validates Session 10; the S10 Computer-Use skill has no validation run. Kept here because the S10 code tree is a copy of the S9 runtime.
 
 Browser skill ported into the S8 runtime as one new sub-package. No edits to
 flow.py's orchestration logic; the only orchestrator-side change is a single

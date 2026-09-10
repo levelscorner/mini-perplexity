@@ -19,7 +19,7 @@ a four-layer cascade over [`trycua/cua`'s
 ```
 Layer 1  — extract           AX text directly, no clicks, no LLM       ($0)
 Layer 2a — deterministic     known hotkey sequences (Calculator)       ($0)
-Layer 2b — a11y + judge      scan → cheap text LLM → act → verify      cents
+Layer 2b — a11y + judge      scan → cheap text LLM → act → verify      1 text LLM call/turn (cost unmeasured for S10; the S9 runs on the same gateway billed $0.000000 on free-tier Gemini)
 Layer 3  — vision            screenshot + V9 /v1/vision → click x,y    dollars
 ```
 
@@ -63,7 +63,7 @@ These three:
 | **B** | Open Command Palette in VS Code (Cmd+Shift+P) via the AX tree | `com.microsoft.VSCode` (with `electron_debugging_port=9222`) | **a11y** | No |
 | **C** | Click the king piece on its starting square in macOS Chess | `com.apple.Chess` | **vision** | **Yes** |
 
-A + B cover the "≥ 1 zero-vision" and "Electron page path" requirements.
+A covers the "≥ 1 zero-vision" requirement in code. **The "Electron page path" requirement is NOT met.** `driver.page_call()` exists but has zero call sites, and `_run_a11y()` accepts `electron_port` and ignores it — Task B would drive VS Code through the ordinary AX scan, not the Electron `page` tool. C covers the vision requirement in code (also unrun).
 C covers the vision requirement.
 
 ## Worked output
@@ -71,25 +71,25 @@ C covers the vision requirement.
 ### Task A — Calculator (Layer 2a)
 
 ```
-TODO_PASTE_AFTER_RUN
+Not run. `uv run python run_s10_tasks.py calc` has never completed — there is no stdout to show.
 ```
 
-The trajectory is in `state/sessions/s10-calc-<ts>/trajectory/`.
+No trajectory exists — the task has not been run, and `state/` is gitignored.
 
 ### Task B — VS Code Command Palette (a11y)
 
 ```
-TODO_PASTE_AFTER_RUN
+Not run. `uv run python run_s10_tasks.py vscode` has never completed — there is no stdout to show, and the Electron `page` path this task was meant to exercise is unimplemented.
 ```
 
-The Electron `page` path path activates when `electron_debugging_port`
+The Electron `page` path is **not implemented**. `driver.page_call()` is defined at `computer_use/driver.py:169` but has zero call sites, and `_run_a11y()` receives `electron_port` and never uses it. Launching with `electron_debugging_port` opens the CDP port; nothing in this repo connects to it. Wiring `page_call` into the a11y layer when a vanilla AX scan on an Electron window returns one opaque `AXWebArea` is the missing piece.
 is set on launch — see `cua-driver`'s § 7.2 for why a vanilla AX scan
 on an Electron window returns one opaque `AXWebArea`.
 
 ### Task C — Chess (vision)
 
 ```
-TODO_PASTE_AFTER_RUN
+Not run. `uv run python run_s10_tasks.py game` has never completed — no screenshot was taken, `/v1/vision` was never called, and no click was dispatched.
 ```
 
 Layer 3 triggers because the Chess board renders pieces as bitmaps with
@@ -100,7 +100,7 @@ no per-piece AX nodes. The skill takes one screenshot, sends it +
 
 ## Honest limits this submission ships with
 
-1. **macOS-only.** All three tasks were demoed on macOS. The cua-driver
+1. **Not demoed — nothing here was run.** cua-driver was never installed on the machine that produced this commit, none of the three tasks was executed, and no trajectory, screenshot, or log from a run is committed on this branch. What ships is the code and the design. The code is macOS-only by construction (bundle_ids plus AppleScript activation); a Linux/Windows port would need parallel `_launch_and_activate` paths.
    binary ships cross-platform but bundle_ids and AppleScript activation
    are Mac-specific; a Linux/Windows port would need parallel
    `_launch_and_activate` paths.
@@ -110,7 +110,7 @@ no per-piece AX nodes. The skill takes one screenshot, sends it +
    hide it.
 3. **Vision layer is single-turn.** Real production would iterate
    set-of-marks + VLM until the goal is satisfied; ours takes ONE
-   screenshot and dispatches ONE click, then verifies via re-scan. Good
+   3. **Vision layer is single-turn and unverified.** Real production would iterate set-of-marks + VLM until the goal is satisfied; ours takes ONE screenshot and dispatches ONE click, then re-scans. It has never been run — against Chess or anything else — so whether one click suffices for that task is untested.
    enough for the Chess task; not good enough for a multi-step game.
 4. **No Layer 1 task in the worked set.** Layer 1 is implemented but
    the assignment-list doesn't require it; the three picks cover the
@@ -134,8 +134,7 @@ uv run python run_s10_tasks.py calc        # just A
 ```
 
 State directories (`state/sessions/`) are excluded from git per the
-S6-rubric convention, but the captured trajectories live in
-`evidence/` for graders.
+State directories (`state/sessions/`) are gitignored (`code/.gitignore:7`). There is no `evidence/` directory on this branch — no trajectories were captured, because the tasks were not run.
 
 ## Relationship to other submissions
 
