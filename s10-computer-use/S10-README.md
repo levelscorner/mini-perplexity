@@ -30,7 +30,7 @@ cache).
 
 ## How it plugs in
 
-The S9 orchestrator (`flow.py`) is **byte-identical** to S9. The two
+The S9 orchestrator (`flow.py`) is **byte-identical** to S9. The four
 changes:
 
 1. `prompts/computer_use.md` — the Layer 2b judge prompt.
