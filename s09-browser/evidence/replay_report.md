@@ -62,10 +62,9 @@ Playwright.
 
 ## 5. Screenshots or page-state logs
 
-No per-turn artifact directory was written for this session — that's
-expected when the a11y path didn't require set-of-marks. The text
-LLM acted on the a11y summary directly. Page-state evidence is
-the `actions` log (§4) plus the final URL above.
+1 artifact(s) in `state/sessions/s8-8eabe810/browser/`:
+
+- `browser_1781849717` (96 bytes)
 
 ## 6. Extracted data
 
