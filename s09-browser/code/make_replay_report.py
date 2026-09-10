@@ -38,7 +38,9 @@ def render(sid: str) -> str:
     graph = _load(sess_dir / "graph.json") or {}
     nodes_dir = sess_dir / "nodes"
     node_files = sorted(nodes_dir.glob("n_*.json"))
-    nodes = {p.stem: _load(p) or {} for p in node_files}
+    # Node files are written as n_1.json while graph ids are n:1; key them the
+    # same way so the DAG table can find each node's status and timing.
+    nodes = {p.stem.replace("_", ":", 1): _load(p) or {} for p in node_files}
 
     # Cost via V9's by-agent endpoint
     cost = {}
@@ -97,10 +99,12 @@ def render(sid: str) -> str:
     for n in g_nodes:
         nid = n.get("id", "")
         st = nodes.get(nid, {})
+        elapsed = (st.get("result") or {}).get("elapsed_s", st.get("elapsed_seconds"))
+        elapsed_txt = f"{elapsed:.1f}" if isinstance(elapsed, (int, float)) else "?"
         out.append(
             f"| {nid} | {n.get('skill', st.get('skill', ''))}"
             f" | {st.get('status', n.get('status', ''))}"
-            f" | {st.get('elapsed_seconds', '?')}s |"
+            f" | {elapsed_txt}s |"
         )
     out.append("")
     out.append("Edges:")
@@ -189,10 +193,21 @@ def render(sid: str) -> str:
     # 7. Final comparison table
     out.append("## 7. Final comparison table (Formatter's answer)")
     out.append("")
-    if formatter_out:
-        txt = formatter_out.get("text") or formatter_out.get("output") or formatter_out
-        out.append(str(txt))
-    else:
+    rows = ((distiller_out or {}).get("fields") or {}).get("models") or []
+    if rows:
+        cols = list(rows[0].keys())
+        out.append("| " + " | ".join(cols) + " |")
+        out.append("|" + "|".join(["---"] * len(cols)) + "|")
+        for r in rows:
+            out.append("| " + " | ".join(str(r.get(c, "")) for c in cols) + " |")
+        out.append("")
+    # The Formatter emits its prose under "final_answer"; older runs used
+    # "text" or "output".
+    fo = formatter_out or {}
+    answer = fo.get("final_answer") or fo.get("text") or fo.get("output")
+    if answer:
+        out.append(str(answer))
+    elif not rows:
         out.append("(no formatter output)")
     out.append("")
 

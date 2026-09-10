@@ -81,7 +81,7 @@ map there as:
 | 4 | Browser actions taken | §4 — 10 turns, 9 clicks + 1 done |
 | 5 | Screenshots / page-state logs | §5 — **no screenshots**: the a11y path produced one 96-byte page-state stub, which is under gitignored `state/` and is not in `evidence/`. The auditable page-state record is the action log (§4) plus the final URL (§3). |
 | 6 | Extracted data | §6 — Distiller JSON |
-| 7 | Final comparison table | §7 — the models rendered as a markdown table, plus the Formatter's `final_answer` prose beneath it |  (only true after the make_replay_report.py:193 fix is applied AND evidence/replay_report.md is regenerated; until then the honest row is: `| 7 | Final comparison table | NOT RENDERED — §7 currently prints the formatter dict as a raw Python repr because the report script looks up the wrong key. Known bug, see below. |`)
+| 7 | Final comparison table | §7 — the three models rendered as a markdown table from the Distiller's fields, with the Formatter's `final_answer` prose beneath it |
 | 8 | Turn count + cost summary | §8 — 5 DAG nodes, 10 browser turns. **Cost is missing**: the V9 ledger returned no rows for this session, see Honest limits #1. |
 
 ## Final answer (Formatter)

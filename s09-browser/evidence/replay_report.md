@@ -17,11 +17,11 @@ Nodes (in execution order):
 
 | id | skill | status | elapsed |
 |----|-------|--------|---------|
-| n:1 | planner | complete | ?s |
-| n:2 | browser | complete | ?s |
-| n:3 | distiller | complete | ?s |
-| n:4 | formatter | complete | ?s |
-| n:5 | critic | complete | ?s |
+| n:1 | planner | complete | 4.0s |
+| n:2 | browser | complete | 46.5s |
+| n:3 | distiller | complete | 4.6s |
+| n:4 | formatter | complete | 3.9s |
+| n:5 | critic | complete | 3.5s |
 
 Edges:
 
@@ -62,9 +62,10 @@ Playwright.
 
 ## 5. Screenshots or page-state logs
 
-1 artifact(s) in `state/sessions/s8-8eabe810/browser/`:
-
-- `browser_1781849717` (96 bytes)
+No per-turn artifact directory was written for this session — that's
+expected when the a11y path didn't require set-of-marks. The text
+LLM acted on the a11y summary directly. Page-state evidence is
+the `actions` log (§4) plus the final URL above.
 
 ## 6. Extracted data
 
@@ -97,7 +98,25 @@ Distiller output:
 
 ## 7. Final comparison table (Formatter's answer)
 
-{'final_answer': 'Here are the top 3 most-liked open-source LLMs for text generation on Hugging Face:\n\n1. **deepseek-ai/DeepSeek-R1**\n   - Parameter Count: 685B\n   - Description: Text Generation\n\n2. **deepseek-ai/DeepSeek-V4-Pro**\n   - Parameter Count: 862B\n   - Description: Text Generation\n\n3. **microsoft/phi-2**\n   - Parameter Count: 3B\n   - Description: Text Generation'}
+| model_name | parameter_count | description |
+|---|---|---|
+| deepseek-ai/DeepSeek-R1 | 685B | Text Generation |
+| deepseek-ai/DeepSeek-V4-Pro | 862B | Text Generation |
+| microsoft/phi-2 | 3B | Text Generation |
+
+Here are the top 3 most-liked open-source LLMs for text generation on Hugging Face:
+
+1. **deepseek-ai/DeepSeek-R1**
+   - Parameter Count: 685B
+   - Description: Text Generation
+
+2. **deepseek-ai/DeepSeek-V4-Pro**
+   - Parameter Count: 862B
+   - Description: Text Generation
+
+3. **microsoft/phi-2**
+   - Parameter Count: 3B
+   - Description: Text Generation
 
 ## 8. Turn count + cost summary
 
